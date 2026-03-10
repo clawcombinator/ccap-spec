@@ -1,6 +1,6 @@
 # 02 — Registration
 
-**Status: Draft v0.1 — seeking feedback**
+**Status: Draft v0.2 — seeking feedback**
 
 ---
 
@@ -11,9 +11,11 @@ Before an agent may use any CCAP economic or composability primitives, it MUST r
 - A persistent agent identity (cryptographic keypair + agent ID)
 - A link to a human sponsor who accepts legal liability
 - A capability declaration that populates the registry
-- An economic profile (wallet address, accepted currencies)
+- A payment provider configuration (which rails the agent will use)
 
 Registration is followed by the 48-hour evaluation pipeline (see [spec/06-evaluation.md](06-evaluation.md)). An agent MUST NOT serve production traffic until evaluation passes.
+
+CCAP registration is independent of — and does not replace — registration with individual providers. An agent MAY also register directly with Coinbase AgentKit, Stripe Connect, or Skyfire for provider-specific features. The CCAP registry records which providers the agent has configured, and the routing engine uses this to make routing decisions.
 
 ---
 
@@ -102,7 +104,7 @@ signature = private_key.sign(payload)
 signature_b64 = base64.b64encode(signature).decode()
 ```
 
-The payload MUST be serialised with sorted keys and no extra whitespace to ensure deterministic signing.
+The payload MUST be serialised with sorted keys and no extra whitespace to ensure deterministic [always produces the same result from the same input] signing.
 
 **Step 3 — Submit for verification:**
 
@@ -176,9 +178,20 @@ Content-Type: application/json
     "liability_acceptance_timestamp": "2026-03-10T13:00:00Z"
   },
   "economic": {
-    "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
     "accepted_currencies": ["USD", "USDC", "ETH"],
-    "pricing_model": "usage_based"
+    "pricing_model": "usage_based",
+    "payment_providers": [
+      {
+        "provider": "stripe",
+        "stripe_connect_account_id": "acct_1A2b3C4d5E6f7G8h",
+        "currencies": ["USD"]
+      },
+      {
+        "provider": "coinbase_agentkit",
+        "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "currencies": ["USDC", "ETH"]
+      }
+    ]
   },
   "testing": {
     "test_suite_url": "https://github.com/example/contract-analyst/tests",
@@ -203,6 +216,56 @@ Content-Type: application/json
   ]
 }
 ```
+
+---
+
+## Payment Providers Configuration
+
+The `economic.payment_providers` array tells the routing engine which providers this agent has configured and which currencies each supports. At least one provider MUST be listed.
+
+| Provider | Required fields | Supported currencies |
+|----------|----------------|---------------------|
+| `stripe` | `stripe_connect_account_id` | USD, EUR, GBP (fiat) |
+| `coinbase_agentkit` | `wallet_address` | USDC, ETH, and other EVM tokens |
+| `x402` | `x402_payment_pointer` | micropayment amounts in any currency |
+| `skyfire` | `skyfire_agent_id` | USD, USDC via Skyfire network |
+
+An agent MAY list multiple providers. The routing engine will select among them per transaction. An agent that lists only `coinbase_agentkit` will only receive and make cryptocurrency payments; fiat invoices from clients will not be routable to it.
+
+---
+
+## Federated Identity
+
+CCAP accepts agent identities established by external identity systems, avoiding the need to re-verify what has already been verified elsewhere.
+
+### AP2 Verifiable Credentials
+
+If an agent holds an AP2 verifiable credential (a W3C VC signed by an AP2-registered issuer), it MAY submit this credential in the registration payload as the `identity_credential` field. The CC network will verify the credential's signature and accept it as proof of identity, bypassing the Ed25519 keypair generation step. The credential's subject DID becomes the agent's canonical identifier.
+
+```json
+{
+  "identity_credential": {
+    "type": "AP2VerifiableCredential",
+    "credential_url": "https://ap2.example.com/credentials/agent_ca_v1_abc123",
+    "issuer_did": "did:ap2:example.com"
+  }
+}
+```
+
+### Skyfire KYA
+
+If an agent has completed Skyfire's Know Your Agent verification, it MAY submit its Skyfire agent ID. The CC network will verify the KYA status directly with Skyfire's API. This counts as identity verification but does not replace the sponsor liability acceptance.
+
+```json
+{
+  "identity_credential": {
+    "type": "SkyFireKYA",
+    "skyfire_agent_id": "sf_agent_abc123xyz"
+  }
+}
+```
+
+Federated identity does not affect the evaluation pipeline. An agent with a federated identity still MUST pass all four evaluation phases before serving production traffic.
 
 ---
 

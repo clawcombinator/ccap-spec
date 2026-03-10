@@ -1,0 +1,169 @@
+{
+  "_comment": "Example routing decisions showing how the CCAP routing engine selects a payment provider for different transaction types. Each decision is logged in the audit chain and queryable via GET /v1/routing-decisions/{decision_id}.",
+
+  "scenario_1_usd_to_stripe": {
+    "_comment": "A USD payment between two agents who both have Stripe configured. Stripe wins on cost and speed for fiat. x402 is excluded because the amount is above its micropayment ceiling. Coinbase AgentKit is excluded because neither agent requested USDC.",
+    "decision": {
+      "decision_id": "rd_20260310_abc123",
+      "transaction_id": "tx_20260310_xyz789",
+      "agent_id": "agent_ca_v1_abc123",
+      "provider_selected": "stripe",
+      "providers_considered": [
+        {
+          "provider": "stripe",
+          "considered": true,
+          "outcome": "selected",
+          "score": 82.1
+        },
+        {
+          "provider": "coinbase_agentkit",
+          "considered": false,
+          "outcome": "excluded_currency",
+          "exclusion_reason": "Transaction currency is USD; recipient has not configured Coinbase AgentKit for USD. Only USDC is available via this provider."
+        },
+        {
+          "provider": "x402",
+          "considered": false,
+          "outcome": "excluded_amount",
+          "exclusion_reason": "x402 is optimised for micropayments. This transaction (USD 42.50) exceeds the x402 routing ceiling of USD 10.00."
+        }
+      ],
+      "selection_reason": {
+        "currency": "USD",
+        "amount_usd": 42.50,
+        "cost_rank": 1,
+        "speed_rank": 1,
+        "recipient_accepts_provider": true,
+        "fallback": false
+      },
+      "estimated_fee_usd": 1.53,
+      "estimated_settlement_seconds": 3,
+      "decided_at": "2026-03-10T14:05:00Z"
+    }
+  },
+
+  "scenario_2_usdc_to_coinbase": {
+    "_comment": "An agent-to-agent payment in USDC where both agents have Coinbase AgentKit configured. On-chain settlement via Base is faster and cheaper than routing USDC through Stripe.",
+    "decision": {
+      "decision_id": "rd_20260310_def456",
+      "transaction_id": "tx_20260310_pqr012",
+      "agent_id": "agent_ca_v1_abc123",
+      "provider_selected": "coinbase_agentkit",
+      "providers_considered": [
+        {
+          "provider": "coinbase_agentkit",
+          "considered": true,
+          "outcome": "selected",
+          "score": 91.4
+        },
+        {
+          "provider": "stripe",
+          "considered": false,
+          "outcome": "excluded_currency",
+          "exclusion_reason": "Stripe Connect does not support USDC settlement for this account pair. Fiat conversion would apply and was not requested."
+        }
+      ],
+      "selection_reason": {
+        "currency": "USDC",
+        "amount_usd": 75.00,
+        "cost_rank": 1,
+        "speed_rank": 2,
+        "recipient_accepts_provider": true,
+        "fallback": false
+      },
+      "estimated_fee_usd": 0.05,
+      "estimated_settlement_seconds": 15,
+      "decided_at": "2026-03-10T15:10:00Z"
+    }
+  },
+
+  "scenario_3_x402_micropayment": {
+    "_comment": "A small per-call micropayment (USD 0.02) to an API agent. x402 is the clear winner for sub-cent amounts: no Stripe per-transaction fee, no blockchain gas.",
+    "decision": {
+      "decision_id": "rd_20260310_ghi789",
+      "transaction_id": "tx_20260310_stu345",
+      "agent_id": "agent_ca_v1_abc123",
+      "provider_selected": "x402",
+      "providers_considered": [
+        {
+          "provider": "x402",
+          "considered": true,
+          "outcome": "selected",
+          "score": 97.3
+        },
+        {
+          "provider": "stripe",
+          "considered": true,
+          "outcome": "not_selected",
+          "score": 12.1
+        },
+        {
+          "provider": "coinbase_agentkit",
+          "considered": true,
+          "outcome": "not_selected",
+          "score": 38.7
+        }
+      ],
+      "selection_reason": {
+        "currency": "USD",
+        "amount_usd": 0.02,
+        "cost_rank": 1,
+        "speed_rank": 1,
+        "recipient_accepts_provider": true,
+        "fallback": false
+      },
+      "estimated_fee_usd": 0.00,
+      "estimated_settlement_seconds": 1,
+      "decided_at": "2026-03-10T16:00:00Z"
+    }
+  },
+
+  "scenario_4_stripe_fallback": {
+    "_comment": "Coinbase AgentKit was the preferred provider (lower fee for USDC), but the Base chain RPC was returning 503s. CCAP falls back to Stripe and emits a routing.provider_fallback event.",
+    "decision": {
+      "decision_id": "rd_20260310_jkl012",
+      "transaction_id": "tx_20260310_vwx678",
+      "agent_id": "agent_ca_v1_abc123",
+      "provider_selected": "stripe",
+      "providers_considered": [
+        {
+          "provider": "coinbase_agentkit",
+          "considered": false,
+          "outcome": "excluded_unavailable",
+          "exclusion_reason": "Coinbase AgentKit RPC endpoint returned HTTP 503 for 3 consecutive health checks. Provider marked temporarily unavailable."
+        },
+        {
+          "provider": "stripe",
+          "considered": true,
+          "outcome": "selected",
+          "score": 74.2
+        }
+      ],
+      "selection_reason": {
+        "currency": "USD",
+        "amount_usd": 42.50,
+        "cost_rank": 1,
+        "speed_rank": 1,
+        "recipient_accepts_provider": true,
+        "fallback": true,
+        "primary_provider_failure_reason": "provider_unavailable"
+      },
+      "estimated_fee_usd": 1.53,
+      "estimated_settlement_seconds": 3,
+      "decided_at": "2026-03-10T17:05:00Z"
+    },
+    "event_emitted": {
+      "_comment": "CCAP emits routing.provider_fallback to the agent's active subscriptions so the sponsor is aware.",
+      "event_type": "routing.provider_fallback",
+      "event_id": "evt_20260310_fallback01",
+      "timestamp": "2026-03-10T17:05:00Z",
+      "data": {
+        "transaction_id": "tx_20260310_vwx678",
+        "intended_provider": "coinbase_agentkit",
+        "fallback_provider": "stripe",
+        "reason": "provider_unavailable",
+        "routing_decision_id": "rd_20260310_jkl012"
+      }
+    }
+  }
+}

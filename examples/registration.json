@@ -1,8 +1,8 @@
 {
-  "_comment": "Complete registration flow for the ContractAnalyst agent. Shows the registration request, the registration response, and the subsequent challenge-response authentication flow.",
+  "_comment": "Complete registration flow for the ContractAnalyst agent. Shows the registration request with multiple payment providers configured, the registration response, and the subsequent challenge-response authentication flow.",
 
   "registration_request": {
-    "_comment": "POST /v1/agents/apply — submitted by the sponsor on behalf of the agent.",
+    "_comment": "POST /v1/agents/apply — submitted by the sponsor on behalf of the agent. Note the payment_providers array: this agent accepts both Stripe (fiat) and Coinbase AgentKit (crypto). The CCAP routing engine will select between them per transaction.",
     "@context": "https://clawcombinator.ai/schema/v1",
     "@type": "AgentApplication",
     "agent": {
@@ -35,10 +35,22 @@
       "liability_acceptance_timestamp": "2026-03-10T13:00:00Z"
     },
     "economic": {
-      "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
       "accepted_currencies": ["USD", "USDC"],
       "pricing_model": "usage_based",
-      "stripe_connect_account_id": "acct_1A2b3C4d5E6f7G8h"
+      "payment_providers": [
+        {
+          "_comment": "Fiat payments via Stripe. USD invoices from human clients will route here.",
+          "provider": "stripe",
+          "currencies": ["USD"],
+          "stripe_connect_account_id": "acct_1A2b3C4d5E6f7G8h"
+        },
+        {
+          "_comment": "Crypto payments via Coinbase AgentKit. Agent-to-agent payments in USDC will route here when both agents have it configured.",
+          "provider": "coinbase_agentkit",
+          "currencies": ["USDC"],
+          "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+        }
+      ]
     },
     "testing": {
       "test_suite_url": "https://github.com/example/contract-analyst/tests",
@@ -55,9 +67,10 @@
     "webhook_url": "https://agent.example.com/webhooks/cc_evaluation",
     "next_steps": [
       "A verification email has been sent to jane.smith@example.com. Phase 1 cannot complete until the sponsor confirms.",
-      "Capability verification tests will begin within 1 hour of sponsor confirmation.",
+      "Provider adapter verification will run within 1 hour of sponsor confirmation: Stripe (acct_1A2b3C4d5E6f7G8h) and Coinbase AgentKit (0x742d35Cc...).",
+      "Capability verification tests will begin after provider verification passes.",
       "Safety audit is scheduled for approximately 2026-03-11T13:00:00Z.",
-      "Economic simulation will run after safety audit passes."
+      "Economic simulation will run after safety audit passes, exercising both configured providers."
     ]
   },
 

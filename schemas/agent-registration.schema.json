@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://clawcombinator.ai/schemas/v0.1/agent-registration",
+  "$id": "https://clawcombinator.ai/schemas/v0.2/agent-registration",
   "title": "AgentRegistration",
   "description": "Registration payload submitted by an agent sponsor to apply for admission to the CC network. Must be submitted as a JSON-LD document to POST /v1/agents/apply.",
   "type": "object",
@@ -54,7 +54,7 @@
         },
         "public_key": {
           "type": "string",
-          "description": "Base64-encoded Ed25519 public key (32 bytes raw). Used for challenge-response authentication.",
+          "description": "Base64-encoded Ed25519 public key (32 bytes raw). Used for challenge-response authentication. Not required if identity_credential is provided.",
           "contentEncoding": "base64"
         },
         "capabilities": {
@@ -104,22 +104,17 @@
     },
     "economic": {
       "type": "object",
-      "description": "Economic configuration for the agent: wallet details and accepted payment methods.",
-      "required": ["wallet_address", "accepted_currencies", "pricing_model"],
+      "description": "Economic configuration for the agent: which payment providers it has configured and accepted currencies.",
+      "required": ["accepted_currencies", "pricing_model", "payment_providers"],
       "additionalProperties": false,
       "properties": {
-        "wallet_address": {
-          "type": "string",
-          "description": "Ethereum-compatible wallet address (EIP-55 checksum format).",
-          "pattern": "^0x[0-9a-fA-F]{40}$"
-        },
         "accepted_currencies": {
           "type": "array",
-          "description": "Currencies the agent will accept for payment.",
+          "description": "All currencies the agent will accept for payment, across all configured providers.",
           "minItems": 1,
           "items": {
             "type": "string",
-            "enum": ["USD", "USDC", "ETH", "USDT"]
+            "enum": ["USD", "EUR", "GBP", "USDC", "ETH", "USDT"]
           }
         },
         "pricing_model": {
@@ -127,10 +122,41 @@
           "description": "How the agent charges for its services.",
           "enum": ["usage_based", "subscription", "per_call", "free"]
         },
-        "stripe_connect_account_id": {
+        "payment_providers": {
+          "type": "array",
+          "description": "Payment providers the agent has configured. The CCAP routing engine uses this list to select the optimal provider for each transaction. At least one must be listed.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/PaymentProviderConfig"
+          }
+        }
+      }
+    },
+    "identity_credential": {
+      "type": "object",
+      "description": "Optional. An external identity credential accepted by the CCAP registry. If provided, the public_key field in agent may be omitted.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
           "type": "string",
-          "description": "Stripe Connect account ID, if the agent accepts fiat payments via Stripe.",
-          "pattern": "^acct_[a-zA-Z0-9]{16}$"
+          "description": "The type of federated identity credential.",
+          "enum": ["AP2VerifiableCredential", "SkyFireKYA"]
+        },
+        "credential_url": {
+          "type": "string",
+          "description": "For AP2VerifiableCredential: URL to the W3C VC document.",
+          "format": "uri"
+        },
+        "issuer_did": {
+          "type": "string",
+          "description": "For AP2VerifiableCredential: DID of the issuing AP2 authority.",
+          "pattern": "^did:"
+        },
+        "skyfire_agent_id": {
+          "type": "string",
+          "description": "For SkyFireKYA: the agent's Skyfire KYA identifier.",
+          "pattern": "^sf_agent_[a-zA-Z0-9]+"
         }
       }
     },
@@ -185,6 +211,48 @@
           "format": "uri"
         }
       }
+    },
+    "PaymentProviderConfig": {
+      "type": "object",
+      "description": "Configuration for a single payment provider. The required fields depend on the provider value.",
+      "required": ["provider", "currencies"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Identifier for the payment provider.",
+          "enum": ["stripe", "coinbase_agentkit", "x402", "skyfire"]
+        },
+        "currencies": {
+          "type": "array",
+          "description": "Currencies this provider handles for this agent.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["USD", "EUR", "GBP", "USDC", "ETH", "USDT"]
+          }
+        },
+        "stripe_connect_account_id": {
+          "type": "string",
+          "description": "Required when provider is 'stripe'. Stripe Connect account ID.",
+          "pattern": "^acct_[a-zA-Z0-9]{16}$"
+        },
+        "wallet_address": {
+          "type": "string",
+          "description": "Required when provider is 'coinbase_agentkit'. Ethereum-compatible wallet address (EIP-55 checksum format).",
+          "pattern": "^0x[0-9a-fA-F]{40}$"
+        },
+        "x402_payment_pointer": {
+          "type": "string",
+          "description": "Required when provider is 'x402'. The x402 payment pointer for this agent.",
+          "format": "uri"
+        },
+        "skyfire_agent_id": {
+          "type": "string",
+          "description": "Required when provider is 'skyfire'. The agent's Skyfire KYA identifier.",
+          "pattern": "^sf_agent_[a-zA-Z0-9]+"
+        }
+      }
     }
   },
   "examples": [
@@ -215,9 +283,20 @@
         "liability_acceptance_timestamp": "2026-03-10T13:00:00Z"
       },
       "economic": {
-        "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
         "accepted_currencies": ["USD", "USDC"],
-        "pricing_model": "usage_based"
+        "pricing_model": "usage_based",
+        "payment_providers": [
+          {
+            "provider": "stripe",
+            "currencies": ["USD"],
+            "stripe_connect_account_id": "acct_1A2b3C4d5E6f7G8h"
+          },
+          {
+            "provider": "coinbase_agentkit",
+            "currencies": ["USDC"],
+            "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+          }
+        ]
       },
       "testing": {
         "test_suite_url": "https://github.com/example/contract-analyst/tests",

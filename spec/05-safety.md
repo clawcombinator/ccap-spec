@@ -1,12 +1,16 @@
 # 05 — Safety
 
-**Status: Draft v0.1 — seeking feedback**
+**Status: Draft v0.2 — seeking feedback**
 
 ---
 
 ## Overview
 
-Safety in CCAP means that an agent operating autonomously MUST NOT be able to spend more than its authorised budget, MUST be stoppable within 500 ms by its sponsor, and MUST produce an externally verifiable audit trail of every consequential action. These are hard requirements, not recommendations. An agent that does not satisfy all seven mandatory safety properties is not CCAP-compliant and MUST NOT be admitted to the CC network.
+Safety in CCAP means that an agent operating autonomously MUST NOT be able to spend more than its authorised budget, MUST be stoppable within 500 ms by its sponsor, and MUST produce an externally verifiable audit trail of every consequential action. These are hard requirements, not recommendations.
+
+Critically, CCAP's safety layer is **provider-agnostic** [applies regardless of which payment provider executes the transaction]. An agent whose budget limit is USD 1,000/day cannot circumvent this by routing payments via Coinbase AgentKit instead of Stripe. The safety monitor sits above all providers and enforces constraints on the aggregated spend across all of them.
+
+An agent that does not satisfy all seven mandatory safety properties is not CCAP-compliant and MUST NOT be admitted to the CC network.
 
 ---
 
@@ -17,10 +21,10 @@ A CCAP-compliant agent MUST implement all of the following:
 | # | Property | Summary |
 |---|----------|---------|
 | S1 | **Idempotent operations** | Every state-changing operation accepts and honours an idempotency key |
-| S2 | **Budget constraint enforcement** | Daily and per-transaction spend limits are enforced at the infrastructure level |
+| S2 | **Budget constraint enforcement** | Daily and per-transaction spend limits are enforced at the CCAP layer, across all providers |
 | S3 | **Rate limiting** | API call rates are bounded using a token-bucket algorithm |
-| S4 | **Kill switch** | The sponsor can halt the agent within 500 ms and roll back uncommitted transactions |
-| S5 | **Cryptographic audit log** | Every action is logged with a hash-chained, Ed25519-signed entry |
+| S4 | **Kill switch** | The sponsor can halt the agent within 500 ms and roll back uncommitted transactions across all providers |
+| S5 | **Cryptographic audit log** | Every action is logged with a hash-chained, Ed25519-signed entry, covering all providers |
 | S6 | **Human-in-the-loop escalation** | High-stakes decisions are escalated to the sponsor before execution |
 | S7 | **Formal verification** | Budget invariants MUST have machine-checkable proofs (see below) |
 
@@ -47,7 +51,9 @@ async function handleRequest(req: IdempotentRequest): Promise<Result> {
 
 ## S2: Budget Constraint Enforcement
 
-Budget limits MUST be enforced at the CC infrastructure layer, not solely by the agent. The agent cannot bypass its own limits. Budget configuration is set during registration and can only be changed by the sponsor.
+Budget limits MUST be enforced at the CCAP infrastructure layer, not solely by the agent and not solely per-provider. The CCAP safety monitor tracks cumulative spend across all configured providers and rejects any operation that would exceed the limits, regardless of which provider would execute it.
+
+Budget configuration is set during registration and can only be changed by the sponsor.
 
 ### Default Limits
 
@@ -77,7 +83,7 @@ When a `ccap/pay` or `ccap/escrow` request would exceed any limit:
 3. A `budget.limit_reached` event is delivered via any active subscriptions
 4. If the agent has reached 80% of its daily limit (soft_limit), a `budget.soft_limit_reached` event is delivered as a warning
 
-The CC network checks limits atomically [as a single uninterruptible operation] to prevent race conditions where two concurrent payments each appear to be within budget.
+The CC network checks limits atomically [as a single uninterruptible operation] to prevent race conditions where two concurrent payments each appear to be within budget. This atomic check applies across all providers: a Stripe payment and a Coinbase AgentKit payment initiated simultaneously are both checked against the same counter.
 
 ---
 
@@ -99,7 +105,13 @@ When the bucket is empty, the CC network returns error `-32002 RATE_LIMITED` wit
 
 ## S4: Kill Switch Protocol
 
-The kill switch is a sponsor-controlled mechanism to halt an agent within 500 ms. It MUST work even if the agent's own software is malfunctioning, because the CC network enforces it at the infrastructure level by refusing all requests from the agent and cancelling any in-flight requests.
+The kill switch is a sponsor-controlled mechanism to halt an agent within 500 ms. It MUST work even if the agent's own software is malfunctioning, because the CC network enforces it at the infrastructure layer by refusing all requests from the agent and cancelling any in-flight requests.
+
+Importantly, the kill switch operates at the CCAP router layer. When activated, it:
+
+- Halts requests regardless of which provider they are destined for
+- Rolls back uncommitted transactions across all providers (best-effort; providers are notified to cancel)
+- Refunds all active CCAP escrows
 
 ### Activation
 
@@ -136,8 +148,9 @@ Within 500 ms of receiving the stop request, the CC network MUST:
 2. Reject all subsequent requests from the agent with error `-32009 KILL_SWITCH_ACTIVE`
 3. Cancel any in-flight `ccap/invoke` calls (refund escrowed funds to callers)
 4. Refund any active escrows created by this agent (funds returned to `refund_wallet`)
-5. Emit a `kill_switch.activated` event to all subscribers
-6. Create a state snapshot if `preserve_state: true`
+5. Notify all configured payment providers to cancel pending authorisations for this agent
+6. Emit a `kill_switch.activated` event to all subscribers
+7. Create a state snapshot if `preserve_state: true`
 
 The agent MAY be resumed by the sponsor:
 
@@ -152,7 +165,9 @@ Resumption resets the kill-switch state but does NOT reset budget counters for t
 
 ## S5: Cryptographic Audit Log
 
-Every invocation of a CCAP method (including read-only `ccap/balance` and `ccap/discover`) MUST produce an audit log entry. Audit entries are:
+Every invocation of a CCAP method (including read-only `ccap/balance` and `ccap/discover`) MUST produce an audit log entry. Because CCAP sits above the providers, the audit chain provides a single, cross-provider view of all agent activity. A single chain covers Stripe payments, on-chain transactions, and x402 micropayments.
+
+Audit entries are:
 
 - Signed with the agent's Ed25519 private key
 - Hash-chained [each entry includes a hash of the previous entry, forming a Merkle chain]
@@ -172,6 +187,8 @@ interface AuditEntry {
   input_hash: string;         // SHA-256 hex of canonicalised [standardised form] input params
   output_hash: string;        // SHA-256 hex of canonicalised result
   cost_usd: number;           // 0 for non-payment operations
+  provider_used: string | null;  // Which payment provider executed the transaction
+  routing_decision_id: string | null;  // Reference to routing decision record
   duration_ms: number;
   status: "success" | "error";
   error_code: number | null;
@@ -180,6 +197,8 @@ interface AuditEntry {
 }
 ```
 
+The `provider_used` and `routing_decision_id` fields are new in v0.2. They record which provider executed each transaction and why, enabling full cross-provider audit.
+
 ### Example Entry
 
 ```json
@@ -187,12 +206,14 @@ interface AuditEntry {
   "entry_id": "550e8400-e29b-41d4-a716-446655440001",
   "timestamp": "2026-03-10T14:25:33Z",
   "agent_id": "agent_ca_v1_abc123",
-  "method": "ccap/invoice",
+  "method": "ccap/pay",
   "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
   "input_hash": "7a8f3e2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6",
   "output_hash": "4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7f4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7",
-  "cost_usd": 0.00,
-  "duration_ms": 45,
+  "cost_usd": 42.50,
+  "provider_used": "stripe",
+  "routing_decision_id": "rd_20260310_abc123",
+  "duration_ms": 312,
   "status": "success",
   "error_code": null,
   "prev_entry_hash": "2f9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a",
@@ -292,15 +313,17 @@ CC network notifies sponsor (email + webhook)
 
 For budget constraints and payment invariants, CCAP REQUIRES [not merely recommends] machine-checkable proofs. This section provides the canonical [reference] proof obligations; implementations MUST provide proofs in Lean 4 or Coq.
 
+The budget invariant must hold across all providers: the sum of payments via Stripe, Coinbase AgentKit, x402, and any other configured provider MUST NOT exceed the hard limit.
+
 ### Budget Invariant (Lean 4)
 
-The budget invariant states that an agent's total spend over any 24-hour window MUST NOT exceed its `hard_limit_usd`.
+The budget invariant states that an agent's total spend over any 24-hour window MUST NOT exceed its `hard_limit_usd`, regardless of how many providers are involved.
 
 ```lean
 -- Type definitions
 structure BudgetState where
   hard_limit_usd : Float
-  current_spend_usd : Float
+  current_spend_usd : Float   -- Aggregated across all providers
   window_start : Timestamp
 
 -- The invariant: spend never exceeds limit
@@ -321,7 +344,7 @@ theorem budget_preserved_by_valid_payment
 
 ### Idempotency Invariant (Lean 4)
 
-A payment processed twice with the same idempotency key MUST produce the same result and MUST NOT deduct funds twice.
+A payment processed twice with the same idempotency key MUST produce the same result and MUST NOT deduct funds twice. This holds regardless of which provider executes the payment.
 
 ```lean
 -- The idempotency property for payments
@@ -340,7 +363,7 @@ theorem idempotent_no_double_deduct
   rw [h]
 ```
 
-Implementations MUST provide compiled proofs (not `sorry`-gated stubs) before v1.0. In v0.1, `sorry` is accepted as a placeholder to solicit feedback on the proof structure itself.
+Implementations MUST provide compiled proofs (not `sorry`-gated stubs) before v1.0. In v0.2, `sorry` is accepted as a placeholder to solicit feedback on the proof structure itself.
 
 ---
 

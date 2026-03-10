@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.2/routing-decision",
+  "title": "RoutingDecision",
+  "description": "A record of the CCAP routing engine's provider selection decision for a payment transaction. Included in the audit log entry for every ccap/pay, invoice settlement, and ccap/escrow release. Queryable via GET /v1/routing-decisions/{decision_id}.",
+  "type": "object",
+  "required": [
+    "decision_id",
+    "transaction_id",
+    "provider_selected",
+    "providers_considered",
+    "selection_reason",
+    "decided_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "description": "Unique identifier for this routing decision.",
+      "pattern": "^rd_[0-9]{8}_[a-zA-Z0-9]{6,32}$",
+      "examples": ["rd_20260310_abc123"]
+    },
+    "transaction_id": {
+      "type": "string",
+      "description": "The CCAP transaction ID this decision was made for.",
+      "examples": ["tx_20260310_xyz789"]
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "The CCAP agent ID of the payer.",
+      "examples": ["agent_ca_v1_abc123"]
+    },
+    "provider_selected": {
+      "type": "string",
+      "description": "The provider that was selected to execute the transaction.",
+      "enum": ["stripe", "coinbase_agentkit", "x402", "skyfire"]
+    },
+    "providers_considered": {
+      "type": "array",
+      "description": "All providers that were evaluated before the selection was made. Includes providers that were excluded and the reason.",
+      "items": {
+        "$ref": "#/$defs/ProviderCandidate"
+      }
+    },
+    "selection_reason": {
+      "type": "object",
+      "description": "The specific factors that led to the selected provider being chosen.",
+      "required": ["currency", "amount_usd"],
+      "additionalProperties": true,
+      "properties": {
+        "currency": {
+          "type": "string",
+          "description": "The currency of the transaction.",
+          "examples": ["USD", "USDC", "ETH"]
+        },
+        "amount_usd": {
+          "type": "number",
+          "description": "The transaction amount in USD equivalent.",
+          "minimum": 0,
+          "examples": [42.50]
+        },
+        "cost_rank": {
+          "type": "integer",
+          "description": "Rank of the selected provider by transaction cost (1 = cheapest).",
+          "minimum": 1,
+          "examples": [1]
+        },
+        "speed_rank": {
+          "type": "integer",
+          "description": "Rank of the selected provider by expected settlement speed (1 = fastest).",
+          "minimum": 1,
+          "examples": [2]
+        },
+        "recipient_accepts_provider": {
+          "type": "boolean",
+          "description": "Whether the recipient agent has the selected provider configured.",
+          "examples": [true]
+        },
+        "fallback": {
+          "type": "boolean",
+          "description": "True if the primary provider was unavailable and this was a fallback selection.",
+          "default": false,
+          "examples": [false]
+        },
+        "primary_provider_failure_reason": {
+          "type": "string",
+          "description": "If fallback is true, the reason the primary provider was not selected.",
+          "examples": ["provider_unavailable", "recipient_not_configured", "currency_not_supported"]
+        }
+      }
+    },
+    "estimated_fee_usd": {
+      "type": "number",
+      "description": "Estimated transaction fee in USD for the selected provider at decision time.",
+      "minimum": 0,
+      "examples": [0.30]
+    },
+    "estimated_settlement_seconds": {
+      "type": "integer",
+      "description": "Estimated time to settlement in seconds for the selected provider.",
+      "minimum": 0,
+      "examples": [5]
+    },
+    "decided_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of when the routing decision was made.",
+      "format": "date-time",
+      "examples": ["2026-03-10T14:05:00Z"]
+    }
+  },
+  "$defs": {
+    "ProviderCandidate": {
+      "type": "object",
+      "description": "A provider that was evaluated during routing, including why it was selected or excluded.",
+      "required": ["provider", "considered", "outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "The provider identifier.",
+          "enum": ["stripe", "coinbase_agentkit", "x402", "skyfire"]
+        },
+        "considered": {
+          "type": "boolean",
+          "description": "Whether this provider was a valid candidate (passed all mandatory filters).",
+          "examples": [true]
+        },
+        "outcome": {
+          "type": "string",
+          "description": "The outcome for this provider in the routing decision.",
+          "enum": ["selected", "excluded_currency", "excluded_recipient", "excluded_amount", "excluded_unavailable", "not_selected"]
+        },
+        "exclusion_reason": {
+          "type": "string",
+          "description": "If outcome is 'excluded_*', a human-readable explanation.",
+          "examples": [
+            "Recipient agent has not configured this provider",
+            "Provider does not support USDC transactions",
+            "Provider temporarily unavailable (HTTP 503)"
+          ]
+        },
+        "score": {
+          "type": "number",
+          "description": "Composite routing score assigned to this provider (higher is better). Only present for candidates that were not excluded.",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [78.4]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "decision_id": "rd_20260310_abc123",
+      "transaction_id": "tx_20260310_xyz789",
+      "agent_id": "agent_ca_v1_abc123",
+      "provider_selected": "stripe",
+      "providers_considered": [
+        {
+          "provider": "stripe",
+          "considered": true,
+          "outcome": "selected",
+          "score": 82.1
+        },
+        {
+          "provider": "coinbase_agentkit",
+          "considered": true,
+          "outcome": "not_selected",
+          "score": 61.3
+        },
+        {
+          "provider": "x402",
+          "considered": false,
+          "outcome": "excluded_amount",
+          "exclusion_reason": "x402 is not suitable for transactions above USD 10.00; this transaction is USD 42.50"
+        }
+      ],
+      "selection_reason": {
+        "currency": "USD",
+        "amount_usd": 42.50,
+        "cost_rank": 1,
+        "speed_rank": 1,
+        "recipient_accepts_provider": true,
+        "fallback": false
+      },
+      "estimated_fee_usd": 1.53,
+      "estimated_settlement_seconds": 3,
+      "decided_at": "2026-03-10T14:05:00Z"
+    }
+  ]
+}

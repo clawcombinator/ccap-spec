@@ -1,23 +1,25 @@
 {
-  "_comment": "Multi-agent composition example. Agent A (ContractAnalyst) reviews a contract, identifies high-severity risks, then discovers and invokes Agent B (ContractNegotiatorPro) to negotiate improved terms. Payment flows automatically via escrow.",
+  "_comment": "Multi-agent composition example. Agent A (ContractAnalyst) reviews a contract, identifies high-severity risks, then discovers and invokes Agent B (ContractNegotiatorPro) to negotiate improved terms. CCAP routes the payment via different providers depending on which rail is optimal for each leg of the flow.",
 
-  "scenario": "ContractAnalyst reviews ACME's partnership agreement and finds a high-severity unlimited liability clause. It autonomously discovers ContractNegotiatorPro via ccap/discover, locks the budget in escrow, invokes the negotiation capability, and pays on successful delivery.",
+  "scenario": "ContractAnalyst reviews ACME's partnership agreement and finds a high-severity unlimited liability clause. It autonomously discovers ContractNegotiatorPro via ccap/discover, locks the budget in escrow, invokes the negotiation capability, and pays on successful delivery. The payment routes via Coinbase AgentKit (USDC) because both agents have it configured and the fee is lower than Stripe for this amount.",
 
   "agents": {
     "agent_a": {
       "agent_id": "agent_ca_v1_abc123",
       "name": "ContractAnalyst",
-      "role": "Caller — identifies risks, delegates negotiation"
+      "role": "Caller — identifies risks, delegates negotiation",
+      "payment_providers": ["stripe", "coinbase_agentkit"]
     },
     "agent_b": {
       "agent_id": "agent_negot_v2_xyz789",
       "name": "ContractNegotiatorPro",
-      "role": "Callee — negotiates improved contract terms"
+      "role": "Callee — negotiates improved contract terms",
+      "payment_providers": ["coinbase_agentkit", "skyfire"]
     }
   },
 
   "step_1_agent_a_reviews_contract": {
-    "_comment": "Agent A reviews the contract using its own capability (MCP tools/call, not shown). It returns a risk report.",
+    "_comment": "Agent A reviews the contract using its own capability (MCP tools/call, not shown). It returns a risk report. No payment routing occurs here — this is inbound work from a human client who paid via Stripe.",
     "capability": "contract_review",
     "input": {
       "document_url": "https://example.com/contracts/acme_partnership_v2.pdf",
@@ -43,7 +45,7 @@
   },
 
   "step_2_discover_negotiators": {
-    "_comment": "Agent A finds negotiation specialists via ccap/discover.",
+    "_comment": "Agent A finds negotiation specialists via ccap/discover. The discovery result includes payment_providers so the routing engine can pre-evaluate compatibility.",
     "jsonrpc_request": {
       "jsonrpc": "2.0",
       "id": "req-010",
@@ -74,8 +76,8 @@
                 "p95_latency_ms": 7200000
               }
             ],
-            "wallet_address": "0xNegotiatorWallet9876543210fedcba98765432",
-            "accepted_currencies": ["USD", "USDC"],
+            "payment_providers": ["coinbase_agentkit", "skyfire"],
+            "accepted_currencies": ["USDC"],
             "uptime_30d": 0.9991
           },
           {
@@ -91,7 +93,7 @@
                 "p95_latency_ms": 10800000
               }
             ],
-            "wallet_address": "0xBasicNegotiatorWalletabcdef1234567890abc",
+            "payment_providers": ["stripe"],
             "accepted_currencies": ["USD"],
             "uptime_30d": 0.9854
           }
@@ -103,7 +105,7 @@
   },
 
   "step_3_invoke_negotiator": {
-    "_comment": "Agent A invokes Agent B. The CC network automatically escrows USD 150 (the budget), verifies B is approved, validates the input schema, then forwards the call. On completion, escrow releases actual_cost_usd to B and refunds the remainder to A.",
+    "_comment": "Agent A invokes Agent B. Before forwarding, the CCAP router: (1) validates checks, (2) makes a routing decision — Coinbase AgentKit wins because both agents have it, fee is lower than Stripe, and the recipient only accepts USDC — (3) escrows the budget. On completion, escrow releases via Coinbase AgentKit to Agent B.",
     "jsonrpc_request": {
       "jsonrpc": "2.0",
       "id": "req-011",
@@ -139,21 +141,35 @@
         }
       }
     },
-    "cc_network_pre_invocation": {
-      "_comment": "Before forwarding the call, the CC network performs these checks automatically.",
+    "ccap_router_pre_invocation": {
+      "_comment": "Before forwarding the call, the CCAP router performs these checks and makes a routing decision. The caller never specified a provider — the router decides.",
       "checks": {
-        "caller_balance_sufficient": true,
+        "caller_balance_sufficient_across_providers": true,
         "budget_within_daily_limit": true,
         "budget_within_per_transaction_limit": true,
         "callee_status": "approved",
         "callee_has_capability": true,
-        "input_schema_valid": true
+        "input_schema_valid": true,
+        "common_provider_exists": true
+      },
+      "routing_decision": {
+        "decision_id": "rd_20260310_abc123",
+        "provider_selected": "coinbase_agentkit",
+        "selection_reason": {
+          "currency": "USDC",
+          "amount_usd": 150.00,
+          "cost_rank": 1,
+          "speed_rank": 2,
+          "recipient_accepts_provider": true,
+          "note": "Agent B accepts only USDC. Coinbase AgentKit is the only shared provider."
+        },
+        "decided_at": "2026-03-10T14:06:00Z"
       },
       "escrow_created": {
         "escrow_id": "esc_20260310_mno345",
         "amount": 150.00,
-        "currency": "USD",
-        "locked_at": "2026-03-10T14:06:00Z"
+        "currency": "USDC",
+        "locked_at": "2026-03-10T14:06:05Z"
       }
     },
     "jsonrpc_response": {
@@ -174,6 +190,8 @@
         "actual_cost_usd": 72.00,
         "budget_usd": 150.00,
         "refunded_usd": 78.00,
+        "provider_used": "coinbase_agentkit",
+        "routing_decision_id": "rd_20260310_abc123",
         "started_at": "2026-03-10T14:06:30Z",
         "completed_at": "2026-03-10T17:45:12Z",
         "callee_agent_id": "agent_negot_v2_xyz789",
@@ -183,27 +201,34 @@
   },
 
   "step_4_escrow_resolution": {
-    "_comment": "The CC network automatically releases the escrow on successful completion. No separate ccap/pay call is needed — ccap/invoke handles payment end-to-end.",
+    "_comment": "The CCAP router automatically releases the escrow on successful completion. The settlement goes via Coinbase AgentKit (USDC) — the provider selected at routing time. Refund of the unused portion also routes via the same provider.",
     "escrow_released": {
       "escrow_id": "esc_20260310_mno345",
       "status": "released",
-      "released_to": "0xNegotiatorWallet9876543210fedcba98765432",
-      "released_amount_usd": 72.00,
-      "refunded_to": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-      "refunded_amount_usd": 78.00,
+      "released_to_agent_id": "agent_negot_v2_xyz789",
+      "released_via_provider": "coinbase_agentkit",
+      "released_amount_usdc": 72.00,
+      "refunded_to_agent_id": "agent_ca_v1_abc123",
+      "refunded_via_provider": "coinbase_agentkit",
+      "refunded_amount_usdc": 78.00,
       "released_at": "2026-03-10T17:46:00Z"
     }
   },
 
   "step_5_subscribe_for_next_time": {
-    "_comment": "Agent A subscribes to future invocation.received events so it knows immediately when another agent calls it.",
+    "_comment": "Agent A subscribes to events including routing.provider_fallback, so it knows if a provider becomes unavailable and a fallback was used.",
     "jsonrpc_request": {
       "jsonrpc": "2.0",
       "id": "req-012",
       "method": "ccap/subscribe",
       "params": {
         "agent_id": "*",
-        "event_types": ["invocation.received", "payment.received", "invoice.overdue"],
+        "event_types": [
+          "invocation.received",
+          "payment.received",
+          "invoice.overdue",
+          "routing.provider_fallback"
+        ],
         "webhook_url": "https://agent.example.com/webhooks/ccap",
         "webhook_secret": "s3cr3t-webhook-signing-key-minimum-32-chars",
         "description": "Main event subscription for ContractAnalyst"
@@ -215,7 +240,12 @@
       "result": {
         "subscription_id": "sub_20260310_vwx234",
         "agent_id": "*",
-        "event_types": ["invocation.received", "payment.received", "invoice.overdue"],
+        "event_types": [
+          "invocation.received",
+          "payment.received",
+          "invoice.overdue",
+          "routing.provider_fallback"
+        ],
         "webhook_url": "https://agent.example.com/webhooks/ccap",
         "created_at": "2026-03-10T18:00:00Z",
         "status": "active"

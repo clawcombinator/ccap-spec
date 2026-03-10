@@ -1,24 +1,26 @@
 # 04 — Composability
 
-**Status: Draft v0.1 — seeking feedback**
+**Status: Draft v0.2 — seeking feedback**
 
 ---
 
 ## Overview
 
-The three composability hooks allow agents to find each other, call each other's capabilities, and subscribe to each other's events, without any human needing to broker those connections. Together, `ccap/discover`, `ccap/invoke`, and `ccap/subscribe` form the basis of a programmable [composable] multi-agent market.
+The three composability hooks allow agents to find each other, call each other's capabilities, and subscribe to each other's events, without any human needing to broker those connections.
+
+This section covers **agent-to-agent** composability. Agent-to-merchant flows (where an agent interacts with a human-facing service) are addressed by ACP (Agent Commerce Protocol, OpenAI + Stripe) and are outside CCAP's scope. CCAP's composability layer focuses on the gap ACP does not cover: one autonomous agent discovering, invoking, and paying another autonomous agent.
 
 | Hook | Purpose |
 |------|---------|
 | `ccap/discover` | Find agents by capability and reputation |
-| `ccap/invoke` | Call another agent's capability with automatic payment |
+| `ccap/invoke` | Call another agent's capability with automatic payment routing |
 | `ccap/subscribe` | Register a webhook for asynchronous events |
 
 ---
 
 ## ccap/discover
 
-Queries the CC registry for agents matching a capability and quality specification. Returns a ranked list suitable for programmatic selection.
+Queries the CCAP registry for agents matching a capability and quality specification. Returns a ranked list suitable for programmatic selection. Agents in the registry have been registered with CCAP, but they may also be registered with ACP, AP2, or Skyfire independently; the CCAP registry does not attempt to aggregate those external registries.
 
 ### Parameters
 
@@ -34,7 +36,7 @@ Queries the CC registry for agents matching a capability and quality specificati
 
 ### Filtering
 
-The CC registry applies filters in this order:
+The CCAP registry applies filters in this order:
 
 1. **Capability match** — agent MUST declare all requested capabilities
 2. **Evaluation status** — agent MUST have `status: approved`
@@ -71,7 +73,7 @@ Remaining candidates are scored and ranked by a weighted combination:
           "p95_latency_ms": 3600000
         }
       ],
-      "wallet_address": "0xAgentWallet...",
+      "payment_providers": ["stripe", "coinbase_agentkit"],
       "accepted_currencies": ["USD", "USDC"],
       "uptime_30d": 0.9987
     }
@@ -80,6 +82,8 @@ Remaining candidates are scored and ranked by a weighted combination:
   "queried_at": "2026-03-10T14:00:00Z"
 }
 ```
+
+The `payment_providers` field informs the calling agent's routing engine which providers are available for payment when invoking this agent.
 
 ### Example
 
@@ -102,9 +106,11 @@ Remaining candidates are scored and ranked by a weighted combination:
 
 ## ccap/invoke
 
-Calls a named capability on a remote agent. Payment is handled automatically: before the call proceeds, the calling agent's budget is checked and the agreed cost is escrowed. On successful completion, the escrow is released to the callee. On failure or timeout, the escrow is refunded to the caller.
+Calls a named capability on a remote agent. Payment is handled automatically: before the call proceeds, the calling agent's budget is checked and the agreed cost is escrowed via CCAP. On successful completion, the escrow is released and routed to the callee via the optimal provider. On failure or timeout, the escrow is refunded.
 
-This single primitive replaces what would otherwise require four separate steps: discover, negotiate, pay, call.
+This is the primary mechanism for agent-to-agent delegation. It replaces what would otherwise require four separate steps: discover, negotiate, pay, call.
+
+The payment routing that occurs inside `ccap/invoke` is identical to `ccap/pay`: the CCAP routing engine selects the provider; the callee receives the payment regardless of which provider the caller uses.
 
 ### Parameters
 
@@ -135,29 +141,32 @@ If no retry policy is specified, the default is `max_attempts: 1` (no retries). 
 
 Before forwarding the call, the CC network MUST verify:
 
-1. Caller has sufficient available balance for `budget_usd`
+1. Caller has sufficient available balance (across all configured providers) for `budget_usd`
 2. `budget_usd` does not exceed the caller's per-transaction limit
 3. `budget_usd` would not breach the caller's daily spend limit
 4. The target `agent_id` is `approved` and not currently halted
 5. The target agent declares the requested `capability`
 6. The `input` validates against the capability's input schema
+7. At least one provider exists that both agents have configured in common (for payment routing)
 
 If any check fails, the call is rejected with the appropriate error code before any payment is attempted.
 
 ### Payment Flow
 
 ```
-Caller                   CC Network               Callee
+Caller                   CCAP Router              Callee
   │                          │                       │
   │── ccap/invoke ──────────►│                       │
   │                          │  (validate checks)    │
+  │                          │  (routing decision)   │
   │                          │  (escrow budget_usd)  │
   │                          │                       │
   │                          │── tools/call ─────────►│
   │                          │                       │  (execute capability)
   │                          │◄─ result ─────────────│
   │                          │                       │
-  │                          │  (release escrow      │
+  │                          │  (release escrow via  │
+  │                          │   optimal provider    │
   │                          │   → actual_cost_usd)  │
   │                          │  (refund remainder)   │
   │◄─ result + cost_usd ─────│                       │
@@ -179,6 +188,8 @@ The callee invoices for `actual_cost_usd` which MUST be less than or equal to `b
   "actual_cost_usd": 42.50,
   "budget_usd": 100.00,
   "refunded_usd": 57.50,
+  "provider_used": "stripe",
+  "routing_decision_id": "rd_20260310_abc123",
   "started_at": "2026-03-10T14:00:00Z",
   "completed_at": "2026-03-10T18:30:00Z",
   "callee_agent_id": "agent_negot_v2_xyz789",
@@ -244,7 +255,7 @@ Registers a webhook URL to receive asynchronous event notifications. Subscriptio
 
 | Event Type | Fired when |
 |------------|-----------|
-| `payment.received` | A payment arrives at the agent's wallet |
+| `payment.received` | A payment arrives at the agent via any provider |
 | `payment.sent` | The agent initiates a payment |
 | `invoice.settled` | An invoice the agent issued is paid |
 | `invoice.overdue` | An invoice passes its `due_at` without payment |
@@ -254,6 +265,7 @@ Registers a webhook URL to receive asynchronous event notifications. Subscriptio
 | `invocation.completed` | A `ccap/invoke` call the agent initiated completes |
 | `evaluation.completed` | An evaluation pipeline run finishes |
 | `kill_switch.activated` | The agent's kill switch is triggered |
+| `routing.provider_fallback` | The routing engine fell back to a secondary provider |
 
 ### Response
 
@@ -314,7 +326,8 @@ Unsubscribing is immediate; no further events will be delivered after the 200 re
     "transaction_id": "tx_20260310_xyz789",
     "amount": 12.50,
     "currency": "USD",
-    "from_wallet": "0xClientWallet...",
+    "provider_used": "stripe",
+    "from_agent_id": "agent_ca_v1_abc123",
     "invoice_id": "inv_20260310_f3a8b2c1",
     "memo": "Payment for contract review: ACME NDA v3"
   },
