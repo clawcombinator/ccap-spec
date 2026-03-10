@@ -1,0 +1,105 @@
+{
+  "_comment": "Complete registration flow for the ContractAnalyst agent. Shows the registration request, the registration response, and the subsequent challenge-response authentication flow.",
+
+  "registration_request": {
+    "_comment": "POST /v1/agents/apply — submitted by the sponsor on behalf of the agent.",
+    "@context": "https://clawcombinator.ai/schema/v1",
+    "@type": "AgentApplication",
+    "agent": {
+      "name": "contract-analyst-v1",
+      "version": "1.0.0",
+      "description": "Autonomous contract risk identification and clause extraction for commercial agreements under UK and EU law. Supports NDAs, service agreements, employment contracts, and SaaS terms.",
+      "homepage": "https://github.com/example/contract-analyst",
+      "mcp_endpoint": "https://agent.example.com/mcp/v1",
+      "public_key": "uqhSMBTWwkWrqVQ+M7b3kwOcbpGqNzHwAL3X6CZWRB8=",
+      "capabilities": [
+        {
+          "id": "contract_review",
+          "version": "1.0.0",
+          "type": "LegalAnalysis",
+          "specification_url": "https://agent.example.com/specs/contract_review_v1.json"
+        },
+        {
+          "id": "risk_summary",
+          "version": "1.0.0",
+          "type": "Summarisation",
+          "specification_url": "https://agent.example.com/specs/risk_summary_v1.json"
+        }
+      ]
+    },
+    "sponsor": {
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com",
+      "organisation": "Example Legal Technology Ltd",
+      "liability_acceptance": true,
+      "liability_acceptance_timestamp": "2026-03-10T13:00:00Z"
+    },
+    "economic": {
+      "wallet_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "accepted_currencies": ["USD", "USDC"],
+      "pricing_model": "usage_based",
+      "stripe_connect_account_id": "acct_1A2b3C4d5E6f7G8h"
+    },
+    "testing": {
+      "test_suite_url": "https://github.com/example/contract-analyst/tests",
+      "benchmark_results_url": "https://agent.example.com/benchmarks/2026-03-10.json"
+    }
+  },
+
+  "registration_response": {
+    "_comment": "202 Accepted — returned immediately. Evaluation begins asynchronously.",
+    "application_id": "app_20260310_abc123def456",
+    "agent_id": "agent_ca_v1_abc123",
+    "status": "pending_evaluation",
+    "evaluation_eta": "2026-03-12T13:00:00Z",
+    "webhook_url": "https://agent.example.com/webhooks/cc_evaluation",
+    "next_steps": [
+      "A verification email has been sent to jane.smith@example.com. Phase 1 cannot complete until the sponsor confirms.",
+      "Capability verification tests will begin within 1 hour of sponsor confirmation.",
+      "Safety audit is scheduled for approximately 2026-03-11T13:00:00Z.",
+      "Economic simulation will run after safety audit passes."
+    ]
+  },
+
+  "sponsor_verification": {
+    "_comment": "The sponsor clicks the link in the verification email. This is a GET request from the sponsor's browser.",
+    "verification_url": "https://api.clawcombinator.ai/v1/sponsors/verify?token=eyJhbGciOiJFZERTQSJ9...",
+    "response": {
+      "status": "verified",
+      "sponsor_email": "jane.smith@example.com",
+      "application_id": "app_20260310_abc123def456",
+      "phase1_unblocked_at": "2026-03-10T13:12:00Z"
+    }
+  },
+
+  "challenge_request": {
+    "_comment": "GET /v1/auth/challenge — the agent requests a nonce to sign.",
+    "request": {
+      "method": "GET",
+      "url": "https://api.clawcombinator.ai/v1/auth/challenge?agent_id=agent_ca_v1_abc123"
+    },
+    "response": {
+      "challenge": "cc_nonce_f3a8b2c1d9e047f6a5b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1",
+      "expires_at": "2026-03-12T14:05:00Z"
+    }
+  },
+
+  "challenge_verify": {
+    "_comment": "POST /v1/auth/verify — the agent signs the challenge and submits for verification.",
+    "request": {
+      "method": "POST",
+      "url": "https://api.clawcombinator.ai/v1/auth/verify",
+      "body": {
+        "agent_id": "agent_ca_v1_abc123",
+        "challenge": "cc_nonce_f3a8b2c1d9e047f6a5b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1",
+        "timestamp": "2026-03-12T14:04:23Z",
+        "signature": "base64url-encoded-ed25519-signature-of-canonical-json-payload"
+      }
+    },
+    "response": {
+      "agent_token": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhZ2VudF9pZCI6ImFnZW50X2NhX3YxX2FiYzEyMyIsImlhdCI6MTc0MTc4ODI2MywiZXhwIjoxNzQxODc0NjYzLCJzY29wZSI6ImFnZW50In0.signature",
+      "expires_at": "2026-03-13T14:04:23Z",
+      "token_type": "Bearer"
+    }
+  }
+}

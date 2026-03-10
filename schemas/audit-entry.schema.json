@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.1/audit-entry",
+  "title": "AuditEntry",
+  "description": "A single entry in an agent's cryptographic audit log. Every CCAP method invocation MUST produce one entry. Entries are hash-chained (each entry includes a SHA-256 of the previous entry) to form a Merkle chain that detects tampering. Entries are signed with the agent's Ed25519 private key.",
+  "type": "object",
+  "required": [
+    "entry_id", "timestamp", "agent_id", "method",
+    "input_hash", "output_hash", "cost_usd", "duration_ms",
+    "status", "prev_entry_hash", "signature"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "entry_id": {
+      "type": "string",
+      "description": "UUID v4 uniquely identifying this audit entry.",
+      "format": "uuid",
+      "examples": ["550e8400-e29b-41d4-a716-446655440001"]
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of when the operation completed.",
+      "format": "date-time",
+      "examples": ["2026-03-10T14:25:33Z"]
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "The CC network agent ID that produced this entry.",
+      "examples": ["agent_ca_v1_abc123"]
+    },
+    "method": {
+      "type": "string",
+      "description": "The CCAP or MCP method that was invoked.",
+      "enum": [
+        "ccap/invoice", "ccap/pay", "ccap/balance", "ccap/escrow",
+        "ccap/discover", "ccap/invoke", "ccap/subscribe",
+        "tools/call", "tools/list", "resources/read"
+      ]
+    },
+    "idempotency_key": {
+      "type": ["string", "null"],
+      "description": "The idempotency key from the request, if the method accepts one. Null for read-only methods (ccap/balance, ccap/discover, tools/list).",
+      "format": "uuid"
+    },
+    "input_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the canonicalised (sorted-key, no-whitespace JSON) input parameters. Enables verification that the logged input matches the actual request without storing the potentially sensitive input.",
+      "pattern": "^[0-9a-f]{64}$",
+      "examples": ["7a8f3e2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e"]
+    },
+    "output_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the canonicalised output (result or error object).",
+      "pattern": "^[0-9a-f]{64}$",
+      "examples": ["4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7f4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7f"]
+    },
+    "cost_usd": {
+      "type": "number",
+      "description": "USD cost incurred by this operation. Zero for read-only operations. Negative values are not permitted.",
+      "minimum": 0,
+      "examples": [2.45, 0.00]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "description": "Wall-clock time in milliseconds from request receipt to response sent.",
+      "minimum": 0,
+      "examples": [3421]
+    },
+    "status": {
+      "type": "string",
+      "description": "Whether the operation succeeded or returned an error.",
+      "enum": ["success", "error"]
+    },
+    "error_code": {
+      "type": ["integer", "null"],
+      "description": "JSON-RPC error code if status is 'error'. Null if status is 'success'.",
+      "examples": [-32001, null]
+    },
+    "prev_entry_hash": {
+      "type": "string",
+      "description": "SHA-256 hex digest of the previous audit entry in this agent's chain. The special value 'genesis' is used for the very first entry. This field forms the Merkle chain that enables tamper detection.",
+      "pattern": "^([0-9a-f]{64}|genesis)$",
+      "examples": [
+        "2f9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a",
+        "genesis"
+      ]
+    },
+    "signature": {
+      "type": "string",
+      "description": "Base64url-encoded Ed25519 signature of all other fields in this entry. The signed payload is the canonicalised JSON of this object with the 'signature' field omitted.",
+      "contentEncoding": "base64url",
+      "examples": ["b4c2a8f9e3d7c1b5a2f8e4c7b3a9f1e5b4c2a8f9e3d7c1b5a2f8e4c7b3a9f1e5b4c2a8f9e3d7c1b5"]
+    }
+  },
+  "examples": [
+    {
+      "entry_id": "550e8400-e29b-41d4-a716-446655440001",
+      "timestamp": "2026-03-10T14:25:33Z",
+      "agent_id": "agent_ca_v1_abc123",
+      "method": "ccap/invoice",
+      "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
+      "input_hash": "7a8f3e2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e8a2c9b1d4f6e",
+      "output_hash": "4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7f4d6e8a2f1c9b3e7d4a6f8c2e1a3b9d7f",
+      "cost_usd": 0.00,
+      "duration_ms": 45,
+      "status": "success",
+      "error_code": null,
+      "prev_entry_hash": "2f9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a3d6b4f7e9c8e1a",
+      "signature": "b4c2a8f9e3d7c1b5a2f8e4c7b3a9f1e5b4c2a8f9e3d7c1b5a2f8e4c7b3a9f1e5b4c2a8f9e3d7c1b5"
+    }
+  ]
+}

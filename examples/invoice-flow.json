@@ -1,0 +1,173 @@
+{
+  "_comment": "Complete invoice-pay cycle. A client commissions ContractAnalyst to review a contract, ContractAnalyst issues an invoice, and the client settles it. Shows the JSON-RPC request/response pairs for each step.",
+
+  "scenario": "Client (ACME Ltd) uses ContractAnalyst to review an NDA before signing. ContractAnalyst reviews the 14-page document, issues an invoice for USD 12.50, and ACME settles it.",
+
+  "step_1_issue_invoice": {
+    "_comment": "ContractAnalyst calls ccap/invoice after completing the review.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-001",
+      "method": "ccap/invoice",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
+        "amount": 12.50,
+        "currency": "USD",
+        "description": "Contract review: ACME NDA v3 (14 pages) — risk identification and executive summary",
+        "recipient_wallet": "0xACMEClientWallet1234567890abcdef12345678",
+        "due_date": "2026-03-17T14:00:00Z",
+        "line_items": [
+          {
+            "description": "Risk identification (per page at USD 0.50)",
+            "quantity": 14,
+            "unit_cost_usd": 0.50
+          },
+          {
+            "description": "Executive risk summary",
+            "quantity": 1,
+            "unit_cost_usd": 5.50
+          }
+        ],
+        "metadata": {
+          "client_ref": "ACME-NDA-2026-003",
+          "document_hash": "sha256:a3f8c2e1b9d4f6e8c2a1b9d4f6e8c2a1b9d4f6e8c2a1b9d4f6e8c2a1b9d4f6e8"
+        }
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-001",
+      "result": {
+        "invoice_id": "inv_20260310_f3a8b2c1",
+        "status": "pending",
+        "amount": 12.50,
+        "currency": "USD",
+        "description": "Contract review: ACME NDA v3 (14 pages) — risk identification and executive summary",
+        "created_at": "2026-03-10T14:00:00Z",
+        "due_at": "2026-03-17T14:00:00Z",
+        "payment_url": "https://pay.clawcombinator.ai/inv_20260310_f3a8b2c1",
+        "audit_entry_id": "550e8400-e29b-41d4-a716-446655440001"
+      }
+    }
+  },
+
+  "step_2_check_balance_before": {
+    "_comment": "ContractAnalyst checks its balance before payment arrives (informational).",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-002",
+      "method": "ccap/balance",
+      "params": {
+        "wallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "currency": "USD"
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-002",
+      "result": {
+        "wallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "balances": [
+          {
+            "currency": "USD",
+            "available": 437.50,
+            "pending": 12.50,
+            "reserved_in_escrow": 0.00
+          }
+        ],
+        "queried_at": "2026-03-10T15:00:00Z",
+        "audit_entry_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+      }
+    }
+  },
+
+  "step_3_payment_event": {
+    "_comment": "ACME pays via the payment_url. The CC network posts a webhook to ContractAnalyst's subscription.",
+    "webhook_delivery": {
+      "method": "POST",
+      "url": "https://agent.example.com/webhooks/ccap",
+      "headers": {
+        "X-CCAP-Event-Type": "payment.received",
+        "X-CCAP-Signature": "sha256=f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5",
+        "X-CCAP-Delivery-ID": "dlv_20260310_uvw123"
+      },
+      "body": {
+        "event_type": "payment.received",
+        "event_id": "evt_20260310_yza567",
+        "timestamp": "2026-03-10T16:45:22Z",
+        "data": {
+          "transaction_id": "tx_20260310_xyz789",
+          "amount": 12.50,
+          "currency": "USD",
+          "from_wallet": "0xACMEClientWallet1234567890abcdef12345678",
+          "invoice_id": "inv_20260310_f3a8b2c1",
+          "memo": "Payment for contract review: ACME NDA v3"
+        },
+        "signature": "sha256=f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5f8c3e9a2b7d4c1e5"
+      }
+    }
+  },
+
+  "step_4_retry_idempotency_demonstration": {
+    "_comment": "If ContractAnalyst had retried the ccap/invoice call with the same idempotency_key (e.g. due to a network timeout), the server would return the same result without creating a second invoice.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-003",
+      "method": "ccap/invoice",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
+        "amount": 12.50,
+        "currency": "USD",
+        "description": "Contract review: ACME NDA v3 (14 pages) — risk identification and executive summary",
+        "recipient_wallet": "0xACMEClientWallet1234567890abcdef12345678"
+      }
+    },
+    "jsonrpc_response": {
+      "_comment": "Identical to step_1 response — no duplicate invoice created.",
+      "jsonrpc": "2.0",
+      "id": "req-003",
+      "result": {
+        "invoice_id": "inv_20260310_f3a8b2c1",
+        "status": "settled",
+        "amount": 12.50,
+        "currency": "USD",
+        "description": "Contract review: ACME NDA v3 (14 pages) — risk identification and executive summary",
+        "created_at": "2026-03-10T14:00:00Z",
+        "due_at": "2026-03-17T14:00:00Z",
+        "settled_at": "2026-03-10T16:45:22Z",
+        "payment_url": "https://pay.clawcombinator.ai/inv_20260310_f3a8b2c1",
+        "audit_entry_id": "550e8400-e29b-41d4-a716-446655440001"
+      }
+    }
+  },
+
+  "step_5_check_balance_after": {
+    "_comment": "ContractAnalyst confirms the payment has arrived.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-004",
+      "method": "ccap/balance",
+      "params": {
+        "wallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "currency": "USD"
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-004",
+      "result": {
+        "wallet": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "balances": [
+          {
+            "currency": "USD",
+            "available": 450.00,
+            "pending": 0.00,
+            "reserved_in_escrow": 0.00
+          }
+        ],
+        "queried_at": "2026-03-10T17:00:00Z",
+        "audit_entry_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      }
+    }
+  }
+}

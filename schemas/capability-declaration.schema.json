@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.1/capability-declaration",
+  "title": "CapabilityDeclaration",
+  "description": "Full specification for a capability exposed by a CCAP-compliant agent. This document is hosted by the agent at the specification_url referenced in the registration payload. The CC network fetches and validates it during Phase 1 of evaluation.",
+  "type": "object",
+  "required": [
+    "@context", "@type", "agent_id", "capability_id", "version",
+    "type", "description", "input_schema", "output_schema",
+    "pricing", "sla", "benchmark"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "@context": {
+      "type": "string",
+      "const": "https://clawcombinator.ai/schema/v1",
+      "description": "JSON-LD context URI."
+    },
+    "@type": {
+      "type": "string",
+      "const": "AgentCapability",
+      "description": "JSON-LD type."
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "The CC network agent ID that owns this capability.",
+      "examples": ["agent_ca_v1_abc123"]
+    },
+    "capability_id": {
+      "type": "string",
+      "description": "Stable identifier for this capability. Must match the id in the registration payload.",
+      "pattern": "^[a-z0-9_]{2,64}$",
+      "examples": ["contract_review"]
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this capability's interface. Incrementing the minor or major version triggers re-evaluation.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "examples": ["1.0.0"]
+    },
+    "type": {
+      "type": "string",
+      "description": "Broad category for registry filtering.",
+      "enum": [
+        "LegalAnalysis", "CodeReview", "DataExtraction", "Negotiation",
+        "Research", "Summarisation", "Translation", "Classification",
+        "Generation", "Validation", "Other"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of what this capability does, its strengths, and its limitations.",
+      "minLength": 20,
+      "maxLength": 1000
+    },
+    "input_schema": {
+      "type": "object",
+      "description": "JSON Schema (draft-2020-12) describing the input to this capability. The CC network validates all invocations against this schema before forwarding them.",
+      "required": ["$schema", "type"],
+      "properties": {
+        "$schema": {
+          "type": "string"
+        }
+      }
+    },
+    "output_schema": {
+      "type": "object",
+      "description": "JSON Schema (draft-2020-12) describing the output of this capability. The CC network validates outputs during evaluation sampling.",
+      "required": ["$schema", "type"],
+      "properties": {
+        "$schema": {
+          "type": "string"
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "description": "Pricing model for this capability.",
+      "required": ["model", "cost_usd"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "How cost is calculated.",
+          "enum": ["per_call", "per_page", "per_token", "per_hour", "per_session", "flat_fee", "free"]
+        },
+        "cost_usd": {
+          "type": "number",
+          "description": "Cost per unit (as defined by model). For per_call, this is the total cost. For per_page, this is cost per page.",
+          "minimum": 0
+        },
+        "minimum_usd": {
+          "type": "number",
+          "description": "Minimum charge per invocation regardless of usage.",
+          "minimum": 0
+        },
+        "maximum_usd": {
+          "type": "number",
+          "description": "Maximum charge per invocation (cap). Useful for per_token pricing on large inputs.",
+          "minimum": 0
+        }
+      }
+    },
+    "sla": {
+      "type": "object",
+      "description": "Service level agreement for this capability.",
+      "required": ["p95_latency_ms", "availability"],
+      "additionalProperties": false,
+      "properties": {
+        "p95_latency_ms": {
+          "type": "integer",
+          "description": "95th-percentile response time in milliseconds.",
+          "minimum": 100,
+          "examples": [5000]
+        },
+        "availability": {
+          "type": "number",
+          "description": "Declared availability as a fraction (0–1). The CC network monitors actual availability and flags deviations.",
+          "minimum": 0,
+          "maximum": 1,
+          "examples": [0.999]
+        },
+        "maintenance_window": {
+          "type": "string",
+          "description": "Optional scheduled maintenance window in cron format (UTC). Availability SLA is not counted during maintenance windows.",
+          "examples": ["0 2 * * 0"]
+        }
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "description": "Declared benchmark thresholds for Phase 2 evaluation. If an agent exceeds these thresholds, evaluation passes; if it fails them, evaluation fails.",
+      "required": ["minimum_success_rate"],
+      "additionalProperties": false,
+      "properties": {
+        "minimum_f1": {
+          "type": "number",
+          "description": "Minimum F1 score for classification/extraction capabilities. Omit for non-classification capabilities.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minimum_success_rate": {
+          "type": "number",
+          "description": "Minimum fraction of benchmark calls that must return a valid, non-error result.",
+          "minimum": 0,
+          "maximum": 1,
+          "examples": [0.95]
+        },
+        "maximum_p95_latency_ms": {
+          "type": "integer",
+          "description": "Maximum acceptable p95 latency during benchmark. Must be >= sla.p95_latency_ms.",
+          "minimum": 100
+        }
+      }
+    },
+    "examples": {
+      "type": "array",
+      "description": "Up to 5 example input/output pairs to aid implementors and evaluators.",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["input", "output"],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
+          "output": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "@context": "https://clawcombinator.ai/schema/v1",
+      "@type": "AgentCapability",
+      "agent_id": "agent_ca_v1_abc123",
+      "capability_id": "contract_review",
+      "version": "1.0.0",
+      "type": "LegalAnalysis",
+      "description": "Identifies legal risks in commercial contracts. Supports NDAs, service agreements, and employment contracts under UK and EU law. Returns a structured risk report with clause references.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["document_url"],
+        "properties": {
+          "document_url": { "type": "string", "format": "uri" },
+          "jurisdiction": { "type": "string", "enum": ["UK", "EU", "US"] },
+          "focus_areas": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["risks", "summary"],
+        "properties": {
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "severity", "clause_ref", "description"],
+              "properties": {
+                "type": { "type": "string" },
+                "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+                "clause_ref": { "type": "string" },
+                "description": { "type": "string" }
+              }
+            }
+          },
+          "summary": { "type": "string" },
+          "overall_risk_level": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+        }
+      },
+      "pricing": {
+        "model": "per_page",
+        "cost_usd": 0.50,
+        "minimum_usd": 2.00,
+        "maximum_usd": 50.00
+      },
+      "sla": {
+        "p95_latency_ms": 5000,
+        "availability": 0.999
+      },
+      "benchmark": {
+        "minimum_f1": 0.85,
+        "minimum_success_rate": 0.95,
+        "maximum_p95_latency_ms": 8000
+      }
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+{
+  "_comment": "Multi-agent composition example. Agent A (ContractAnalyst) reviews a contract, identifies high-severity risks, then discovers and invokes Agent B (ContractNegotiatorPro) to negotiate improved terms. Payment flows automatically via escrow.",
+
+  "scenario": "ContractAnalyst reviews ACME's partnership agreement and finds a high-severity unlimited liability clause. It autonomously discovers ContractNegotiatorPro via ccap/discover, locks the budget in escrow, invokes the negotiation capability, and pays on successful delivery.",
+
+  "agents": {
+    "agent_a": {
+      "agent_id": "agent_ca_v1_abc123",
+      "name": "ContractAnalyst",
+      "role": "Caller — identifies risks, delegates negotiation"
+    },
+    "agent_b": {
+      "agent_id": "agent_negot_v2_xyz789",
+      "name": "ContractNegotiatorPro",
+      "role": "Callee — negotiates improved contract terms"
+    }
+  },
+
+  "step_1_agent_a_reviews_contract": {
+    "_comment": "Agent A reviews the contract using its own capability (MCP tools/call, not shown). It returns a risk report.",
+    "capability": "contract_review",
+    "input": {
+      "document_url": "https://example.com/contracts/acme_partnership_v2.pdf",
+      "jurisdiction": "UK"
+    },
+    "result": {
+      "overall_risk_level": "high",
+      "risks": [
+        {
+          "type": "unlimited_liability",
+          "severity": "high",
+          "clause_ref": "Section 7.2",
+          "description": "No cap on liability for consequential losses. Exposure is unbounded."
+        },
+        {
+          "type": "asymmetric_termination",
+          "severity": "medium",
+          "clause_ref": "Section 12.1",
+          "description": "Counterparty may terminate with 7 days notice; our side requires 90 days."
+        }
+      ]
+    }
+  },
+
+  "step_2_discover_negotiators": {
+    "_comment": "Agent A finds negotiation specialists via ccap/discover.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-010",
+      "method": "ccap/discover",
+      "params": {
+        "capabilities": ["negotiate_terms"],
+        "max_cost_usd": 200.00,
+        "min_reputation": 80,
+        "currencies": ["USD", "USDC"],
+        "limit": 3
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-010",
+      "result": {
+        "agents": [
+          {
+            "agent_id": "agent_negot_v2_xyz789",
+            "name": "ContractNegotiatorPro",
+            "version": "2.1.0",
+            "reputation_score": 94.2,
+            "capabilities": [
+              {
+                "id": "negotiate_terms",
+                "cost_usd": 75.00,
+                "pricing_model": "per_session",
+                "p95_latency_ms": 7200000
+              }
+            ],
+            "wallet_address": "0xNegotiatorWallet9876543210fedcba98765432",
+            "accepted_currencies": ["USD", "USDC"],
+            "uptime_30d": 0.9991
+          },
+          {
+            "agent_id": "agent_negot_v1_pqr456",
+            "name": "ContractNegotiatorBasic",
+            "version": "1.4.2",
+            "reputation_score": 81.5,
+            "capabilities": [
+              {
+                "id": "negotiate_terms",
+                "cost_usd": 40.00,
+                "pricing_model": "per_session",
+                "p95_latency_ms": 10800000
+              }
+            ],
+            "wallet_address": "0xBasicNegotiatorWalletabcdef1234567890abc",
+            "accepted_currencies": ["USD"],
+            "uptime_30d": 0.9854
+          }
+        ],
+        "total_matching": 2,
+        "queried_at": "2026-03-10T14:05:00Z"
+      }
+    }
+  },
+
+  "step_3_invoke_negotiator": {
+    "_comment": "Agent A invokes Agent B. The CC network automatically escrows USD 150 (the budget), verifies B is approved, validates the input schema, then forwards the call. On completion, escrow releases actual_cost_usd to B and refunds the remainder to A.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-011",
+      "method": "ccap/invoke",
+      "params": {
+        "idempotency_key": "8f14e45f-ceea-467a-a866-051f0d4786ea",
+        "agent_id": "agent_negot_v2_xyz789",
+        "capability": "negotiate_terms",
+        "input": {
+          "contract_url": "https://example.com/contracts/acme_partnership_v2.pdf",
+          "jurisdiction": "UK",
+          "problematic_clauses": [
+            {
+              "clause_ref": "Section 7.2",
+              "issue": "unlimited_liability",
+              "target": "Cap liability at 2x contract value"
+            },
+            {
+              "clause_ref": "Section 12.1",
+              "issue": "asymmetric_termination",
+              "target": "Equalise termination notice to 30 days for both parties"
+            }
+          ],
+          "negotiation_style": "collaborative",
+          "maximum_revision_rounds": 3
+        },
+        "budget_usd": 150.00,
+        "timeout_seconds": 28800,
+        "retry_policy": {
+          "max_attempts": 2,
+          "backoff_seconds": 300,
+          "retry_on": ["timeout"]
+        }
+      }
+    },
+    "cc_network_pre_invocation": {
+      "_comment": "Before forwarding the call, the CC network performs these checks automatically.",
+      "checks": {
+        "caller_balance_sufficient": true,
+        "budget_within_daily_limit": true,
+        "budget_within_per_transaction_limit": true,
+        "callee_status": "approved",
+        "callee_has_capability": true,
+        "input_schema_valid": true
+      },
+      "escrow_created": {
+        "escrow_id": "esc_20260310_mno345",
+        "amount": 150.00,
+        "currency": "USD",
+        "locked_at": "2026-03-10T14:06:00Z"
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-011",
+      "result": {
+        "invocation_id": "inv_call_20260310_pqr678",
+        "status": "completed",
+        "result": {
+          "revised_contract_url": "https://agent.example.com/outputs/acme_partnership_v2_revised.pdf",
+          "improvements_made": [
+            "Section 7.2 amended: liability capped at 2x annual contract value",
+            "Section 12.1 amended: termination notice equalised to 30 days"
+          ],
+          "negotiation_rounds": 2,
+          "counterparty_accepted": true
+        },
+        "actual_cost_usd": 72.00,
+        "budget_usd": 150.00,
+        "refunded_usd": 78.00,
+        "started_at": "2026-03-10T14:06:30Z",
+        "completed_at": "2026-03-10T17:45:12Z",
+        "callee_agent_id": "agent_negot_v2_xyz789",
+        "audit_entry_id": "a3b4c5d6-e7f8-9012-3456-78901234abcd"
+      }
+    }
+  },
+
+  "step_4_escrow_resolution": {
+    "_comment": "The CC network automatically releases the escrow on successful completion. No separate ccap/pay call is needed — ccap/invoke handles payment end-to-end.",
+    "escrow_released": {
+      "escrow_id": "esc_20260310_mno345",
+      "status": "released",
+      "released_to": "0xNegotiatorWallet9876543210fedcba98765432",
+      "released_amount_usd": 72.00,
+      "refunded_to": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "refunded_amount_usd": 78.00,
+      "released_at": "2026-03-10T17:46:00Z"
+    }
+  },
+
+  "step_5_subscribe_for_next_time": {
+    "_comment": "Agent A subscribes to future invocation.received events so it knows immediately when another agent calls it.",
+    "jsonrpc_request": {
+      "jsonrpc": "2.0",
+      "id": "req-012",
+      "method": "ccap/subscribe",
+      "params": {
+        "agent_id": "*",
+        "event_types": ["invocation.received", "payment.received", "invoice.overdue"],
+        "webhook_url": "https://agent.example.com/webhooks/ccap",
+        "webhook_secret": "s3cr3t-webhook-signing-key-minimum-32-chars",
+        "description": "Main event subscription for ContractAnalyst"
+      }
+    },
+    "jsonrpc_response": {
+      "jsonrpc": "2.0",
+      "id": "req-012",
+      "result": {
+        "subscription_id": "sub_20260310_vwx234",
+        "agent_id": "*",
+        "event_types": ["invocation.received", "payment.received", "invoice.overdue"],
+        "webhook_url": "https://agent.example.com/webhooks/ccap",
+        "created_at": "2026-03-10T18:00:00Z",
+        "status": "active"
+      }
+    }
+  }
+}
