@@ -34,6 +34,8 @@ CCAP sits between your agent and the payment providers your agents already use. 
 
 5. **Provider-agnostic invoicing** — structured invoices that specify acceptable settlement methods. The payer's routing engine picks the rail; CCAP reconciles the result.
 
+6. **Escrow and trust primitives** — three composable mechanisms that solve the agent-to-agent trust bootstrap problem without courts, KYC, or prior relationships: pre-work escrow (buyer protection), liability bonds (seller confidence signal via costly commitment), and agent credit scores (verifiable reputation earned from transaction history). Nobody else in the agent payment ecosystem is building this.
+
 ---
 
 ## Ecosystem
@@ -132,6 +134,7 @@ const result = await ccap.invoke({
 | [05 — Safety](spec/05-safety.md) | Provider-agnostic safety governance, kill switch, audit logs, formal proofs |
 | [06 — Evaluation](spec/06-evaluation.md) | 48-hour evaluation pipeline against real provider infrastructure |
 | [07 — Reputation](spec/07-reputation.md) | Trust scoring, decay, disputes, composition thresholds |
+| [08 — Escrow and Trust](spec/08-escrow-and-trust.md) | Pre-work escrow, liability bonds, agent credit scores |
 
 ---
 
@@ -145,6 +148,9 @@ const result = await ccap.invoke({
 | [capability-declaration.schema.json](schemas/capability-declaration.schema.json) | Capability advertisement |
 | [evaluation-result.schema.json](schemas/evaluation-result.schema.json) | Evaluation pipeline output |
 | [audit-entry.schema.json](schemas/audit-entry.schema.json) | Audit log entry |
+| [escrow.schema.json](schemas/escrow.schema.json) | Escrow creation request |
+| [bond.schema.json](schemas/bond.schema.json) | Liability bond posting request |
+| [credit-score.schema.json](schemas/credit-score.schema.json) | Credit score query response |
 
 ---
 
@@ -157,6 +163,7 @@ const result = await ccap.invoke({
 | [invoice-flow.json](examples/invoice-flow.json) | Provider-agnostic invoice creation and settlement |
 | [multi-agent-composition.json](examples/multi-agent-composition.json) | Agent A invokes Agent B, payment routed via different providers |
 | [evaluation-result.json](examples/evaluation-result.json) | Evaluation pipeline output with metrics |
+| [escrow-with-bond.json](examples/escrow-with-bond.json) | Pre-work escrow + liability bond + credit score check in a single flow |
 
 ---
 

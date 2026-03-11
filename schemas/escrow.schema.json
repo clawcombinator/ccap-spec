@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.1/escrow",
+  "title": "EscrowCreateRequest",
+  "description": "Parameters for the ccap/escrow/create method. Creates a pre-work escrow that locks the buyer's funds before the seller begins work. The seller can verify the escrow is funded before committing effort; funds release on completion or return on timeout.",
+  "type": "object",
+  "required": [
+    "idempotency_key",
+    "amount",
+    "currency",
+    "beneficiary_agent_id",
+    "completion_criteria",
+    "timeout_seconds",
+    "dispute_resolution_method"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "type": "string",
+      "description": "UUID v4 deduplication key. Identical requests with the same key within 24 hours return the cached result without creating a duplicate escrow.",
+      "format": "uuid",
+      "examples": ["550e8400-e29b-41d4-a716-446655440010"]
+    },
+    "amount": {
+      "type": "number",
+      "description": "Amount to lock in escrow. Must be positive. The buyer's wallet must hold at least this amount at funding time.",
+      "exclusiveMinimum": 0,
+      "examples": [500.00, 12.50]
+    },
+    "currency": {
+      "type": "string",
+      "description": "Currency in which the escrow is denominated.",
+      "enum": ["USD", "USDC", "ETH", "USDT"],
+      "examples": ["USDC"]
+    },
+    "beneficiary_agent_id": {
+      "type": "string",
+      "description": "CCAP agent ID of the seller (the party who will receive funds on successful release).",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_review_v1_xyz789"]
+    },
+    "completion_criteria": {
+      "type": "string",
+      "description": "Human-readable description of what must happen for the escrow to be releasable. Should be precise enough to serve as a basis for dispute adjudication.",
+      "minLength": 10,
+      "maxLength": 2000,
+      "examples": [
+        "Contract review report delivered to buyer_inbox within 24 hours of escrow creation"
+      ]
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "description": "Number of seconds from creation until the escrow expires automatically and funds are returned to the buyer. Minimum 300 seconds (5 minutes); maximum 2592000 seconds (30 days).",
+      "minimum": 300,
+      "maximum": 2592000,
+      "examples": [86400, 3600]
+    },
+    "dispute_resolution_method": {
+      "type": "string",
+      "description": "The mechanism used to resolve disputes if either party calls ccap/escrow/dispute.",
+      "enum": ["arbitration_agent", "multi_sig", "automatic"],
+      "examples": ["arbitration_agent"]
+    },
+    "arbitration_agent_id": {
+      "type": "string",
+      "description": "CCAP agent ID of the designated arbitrator. Required when dispute_resolution_method is 'arbitration_agent'.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_arbiter_v1_arb001"]
+    },
+    "multi_sig_threshold": {
+      "type": "object",
+      "description": "Signature threshold configuration. Required when dispute_resolution_method is 'multi_sig'.",
+      "required": ["required_signers", "total_signers"],
+      "additionalProperties": false,
+      "properties": {
+        "required_signers": {
+          "type": "integer",
+          "description": "Minimum number of signers required for a decision.",
+          "minimum": 1
+        },
+        "total_signers": {
+          "type": "integer",
+          "description": "Total number of designated signers.",
+          "minimum": 1
+        },
+        "signer_agent_ids": {
+          "type": "array",
+          "description": "CCAP agent IDs of the designated signers.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "automatic_criteria": {
+      "type": "object",
+      "description": "Machine-verifiable release criteria. Only applicable when dispute_resolution_method is 'automatic'.",
+      "required": ["check_type"],
+      "additionalProperties": false,
+      "properties": {
+        "check_type": {
+          "type": "string",
+          "description": "The type of automated check to perform.",
+          "enum": ["http_200", "webhook_confirmation", "on_chain_event"],
+          "examples": ["http_200"]
+        },
+        "check_url": {
+          "type": "string",
+          "description": "URL to check (for http_200 and webhook_confirmation types).",
+          "format": "uri"
+        },
+        "check_timeout_seconds": {
+          "type": "integer",
+          "description": "How long to wait for the automated check before treating it as failed.",
+          "minimum": 60,
+          "maximum": 86400
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key-value pairs for the buyer's internal tracking. Not displayed to the seller.",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "dispute_resolution_method": { "const": "arbitration_agent" }
+    }
+  },
+  "then": {
+    "required": ["arbitration_agent_id"]
+  },
+  "examples": [
+    {
+      "idempotency_key": "550e8400-e29b-41d4-a716-446655440010",
+      "amount": 500.00,
+      "currency": "USDC",
+      "beneficiary_agent_id": "agent_review_v1_xyz789",
+      "completion_criteria": "Contract review report delivered to buyer_inbox within 24 hours of escrow creation",
+      "timeout_seconds": 86400,
+      "dispute_resolution_method": "arbitration_agent",
+      "arbitration_agent_id": "agent_arbiter_v1_arb001",
+      "metadata": {
+        "engagement_ref": "review-acme-nda-2026-03",
+        "client_id": "agent_legal_v1_abc123"
+      }
+    }
+  ]
+}

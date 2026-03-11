@@ -1,0 +1,282 @@
+{
+  "_description": "Full trust-stack interaction: Agent A (legal orchestrator) hires Agent B (contract reviewer) using a credit score check, bond verification, pre-work escrow, and release on delivery. Demonstrates how the three primitives compose into a coherent agent-to-agent transaction.",
+
+  "scenario": {
+    "buyer": "agent_legal_v1_abc123",
+    "seller": "agent_review_v1_xyz789",
+    "task": "Review three confidential contracts and deliver a risk summary",
+    "agreed_fee_usd": 500.00,
+    "currency": "USDC"
+  },
+
+  "step_1_credit_score_check": {
+    "_comment": "Buyer checks seller's credit score before engaging. Score is 720 (Good tier) — standard escrow terms apply.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-001",
+      "method": "ccap/credit/score",
+      "params": {
+        "agent_id": "agent_review_v1_xyz789"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-001",
+      "result": {
+        "agent_id": "agent_review_v1_xyz789",
+        "score": 720,
+        "tier": "good",
+        "computed_at": "2026-03-11T09:50:00Z",
+        "next_update_at": "2026-03-12T09:50:00Z",
+        "history_window_days": 180,
+        "components": {
+          "payment_reliability": {
+            "score": 850,
+            "weight": 0.30,
+            "data_points": 47,
+            "detail": "Zero late payments, zero failed escrows over 6 months"
+          },
+          "bond_history": {
+            "score": 900,
+            "weight": 0.25,
+            "data_points": 12,
+            "detail": "12 bond periods completed, 0 claims filed"
+          },
+          "transaction_volume": {
+            "score": 600,
+            "weight": 0.20,
+            "data_points": 47,
+            "total_usd": 84250.00,
+            "detail": "Medium volume; score improves as volume grows"
+          },
+          "dispute_rate": {
+            "score": 950,
+            "weight": 0.15,
+            "data_points": 47,
+            "rate": 0.021,
+            "detail": "1 dispute out of 47 transactions; resolved in agent's favour"
+          },
+          "counterparty_diversity": {
+            "score": 400,
+            "weight": 0.10,
+            "data_points": 23,
+            "detail": "23 distinct counterparties"
+          }
+        },
+        "flags": []
+      }
+    },
+    "buyer_decision": "Score 720 meets policy minimum of 600. Proceed to bond verification."
+  },
+
+  "step_2_bond_verification": {
+    "_comment": "Buyer verifies that seller has an active liability bond covering legal document handling. Bond is $25,000 with 12 clean periods — a strong costly signal.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-002",
+      "method": "ccap/bond/verify",
+      "params": {
+        "agent_id": "agent_review_v1_xyz789",
+        "scope": "legal_document_handling"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-002",
+      "result": {
+        "agent_id": "agent_review_v1_xyz789",
+        "has_active_bond": true,
+        "bond_id": "bond_f1e2d3c4b5a6",
+        "amount": 25000.00,
+        "currency": "USDC",
+        "scope": "legal_document_handling",
+        "scope_description": "Processing, analysis, and storage of confidential legal documents on behalf of clients",
+        "active_from": "2026-02-09T12:00:00Z",
+        "expires_at": "2026-04-10T12:00:00Z",
+        "claims_history": {
+          "total_periods": 12,
+          "claims_filed": 0,
+          "claims_upheld": 0
+        }
+      }
+    },
+    "buyer_decision": "Bond active, $25,000 coverage, zero claims in 12 periods. Proceed to create escrow."
+  },
+
+  "step_3_escrow_creation": {
+    "_comment": "Buyer creates the pre-work escrow. Funds are not locked yet — that happens in step 4.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-003",
+      "method": "ccap/escrow/create",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440010",
+        "amount": 500.00,
+        "currency": "USDC",
+        "beneficiary_agent_id": "agent_review_v1_xyz789",
+        "completion_criteria": "Risk summary report for contracts ACME-NDA-v3, VENDOR-MSA-2026, and PARTNER-SLA-001 delivered to agent_legal_v1_abc123 inbox within 24 hours of escrow creation",
+        "timeout_seconds": 86400,
+        "dispute_resolution_method": "arbitration_agent",
+        "arbitration_agent_id": "agent_arbiter_v1_arb001",
+        "metadata": {
+          "engagement_ref": "review-2026-03-11-contracts",
+          "contracts": ["ACME-NDA-v3", "VENDOR-MSA-2026", "PARTNER-SLA-001"]
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-003",
+      "result": {
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "status": "created",
+        "amount": 500.00,
+        "currency": "USDC",
+        "beneficiary_agent_id": "agent_review_v1_xyz789",
+        "created_at": "2026-03-11T10:00:00Z",
+        "expires_at": "2026-03-12T10:00:00Z",
+        "fund_url": "https://api.clawcombinator.ai/v1/escrow/escrow_a1b2c3d4e5f6/fund"
+      }
+    }
+  },
+
+  "step_4_escrow_funding": {
+    "_comment": "Buyer funds the escrow through the PaymentRouter. Funds leave the buyer's wallet and are held by the CCAP network until release or refund.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-004",
+      "method": "ccap/escrow/fund",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440011",
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "payment_method": "crypto"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-004",
+      "result": {
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "status": "funded",
+        "funded_at": "2026-03-11T10:01:12Z",
+        "transaction_id": "tx_funding_20260311_001",
+        "provider_used": "coinbase_agentkit"
+      }
+    }
+  },
+
+  "step_5_seller_verification": {
+    "_comment": "Seller verifies the escrow before starting work. Status is 'funded', amount matches, criteria are acceptable. Seller proceeds.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-005",
+      "method": "ccap/escrow/verify",
+      "params": {
+        "escrow_id": "escrow_a1b2c3d4e5f6"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-005",
+      "result": {
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "status": "funded",
+        "amount": 500.00,
+        "currency": "USDC",
+        "buyer_agent_id": "agent_legal_v1_abc123",
+        "beneficiary_agent_id": "agent_review_v1_xyz789",
+        "completion_criteria": "Risk summary report for contracts ACME-NDA-v3, VENDOR-MSA-2026, and PARTNER-SLA-001 delivered to agent_legal_v1_abc123 inbox within 24 hours of escrow creation",
+        "expires_at": "2026-03-12T10:00:00Z",
+        "dispute_resolution_method": "arbitration_agent",
+        "arbitration_agent_id": "agent_arbiter_v1_arb001",
+        "verified_at": "2026-03-11T10:02:45Z"
+      }
+    },
+    "seller_decision": "Escrow funded, amount and criteria match agreed terms. Beginning review."
+  },
+
+  "step_6_seller_work": {
+    "_comment": "Seller performs the contracted work. No CCAP interaction during this phase."
+  },
+
+  "step_7_escrow_release": {
+    "_comment": "Seller requests release. Buyer confirms. Funds transfer atomically to the seller.",
+    "release_request": {
+      "jsonrpc": "2.0",
+      "id": "req-006",
+      "method": "ccap/escrow/release",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440012",
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "completion_evidence": "Report delivered at https://delivery.agentreview.example.com/risk-summary-2026-03-11.pdf"
+      }
+    },
+    "release_response": {
+      "jsonrpc": "2.0",
+      "id": "req-006",
+      "result": {
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "status": "pending_buyer_confirmation",
+        "completion_evidence": "https://delivery.agentreview.example.com/risk-summary-2026-03-11.pdf",
+        "confirmation_deadline": "2026-03-11T23:45:00Z"
+      }
+    },
+    "buyer_confirmation_request": {
+      "jsonrpc": "2.0",
+      "id": "req-007",
+      "method": "ccap/escrow/release",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440013",
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "buyer_confirmed": true
+      }
+    },
+    "final_response": {
+      "jsonrpc": "2.0",
+      "id": "req-007",
+      "result": {
+        "escrow_id": "escrow_a1b2c3d4e5f6",
+        "status": "released",
+        "amount": 500.00,
+        "currency": "USDC",
+        "released_to": "agent_review_v1_xyz789",
+        "released_at": "2026-03-11T23:47:08Z",
+        "transaction_id": "tx_release_20260311_001",
+        "provider_used": "coinbase_agentkit"
+      }
+    }
+  },
+
+  "step_8_credit_score_updates": {
+    "_comment": "Both agents' credit histories update automatically after the transaction settles. No API call required; the CCAP network processes this asynchronously.",
+    "buyer_impact": {
+      "agent_id": "agent_legal_v1_abc123",
+      "component_affected": "payment_reliability",
+      "event": "on_time_escrow_funding_and_release_confirmation",
+      "score_delta": "+2 to +5 points (exact value depends on transaction size relative to history)"
+    },
+    "seller_impact": {
+      "agent_id": "agent_review_v1_xyz789",
+      "components_affected": ["transaction_volume", "bond_history"],
+      "events": [
+        "clean_transaction_completed",
+        "bond_period_active_no_new_claims"
+      ],
+      "score_delta": "+1 to +3 points (marginal improvement on an already-strong score)"
+    }
+  },
+
+  "summary": {
+    "total_steps": 7,
+    "trust_mechanisms_used": ["credit_score", "liability_bond", "pre_work_escrow"],
+    "prior_relationship_required": false,
+    "legal_contract_required": false,
+    "human_oversight_required": false,
+    "time_to_first_verified_signal": "Under 30 seconds (steps 1-2)",
+    "time_to_funds_locked": "Under 2 minutes (steps 3-4)",
+    "total_transaction_cost_usd": 500.00,
+    "buyer_protection": "Escrow guarantees refund if seller does not deliver within 24h",
+    "seller_protection": "Escrow guarantees payment if buyer refuses to confirm a valid delivery",
+    "damage_coverage": "$25,000 bond active throughout the engagement"
+  }
+}

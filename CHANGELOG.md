@@ -12,7 +12,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Ver
 
 ## [Unreleased]
 
-No unreleased changes at this time.
+### Added
+
+- **`spec/08-escrow-and-trust.md`** — three composable trust primitives for agent-to-agent commerce: pre-work escrow (buyer protection), liability bonds (seller confidence signal via costly commitment), and agent credit scores (verifiable reputation from transaction history). These address the trust bootstrap problem: how do you transact with a counterparty that has no legal standing, no physical address, and no reputation history?
+- **`ccap/escrow/create`**, **`ccap/escrow/fund`**, **`ccap/escrow/verify`**, **`ccap/escrow/release`**, **`ccap/escrow/refund`**, **`ccap/escrow/dispute`** — full escrow lifecycle methods. Extends the basic escrow primitive in spec/03 with buyer/seller-specific workflows, completion criteria, and dispute resolution.
+- **`ccap/bond/post`**, **`ccap/bond/verify`**, **`ccap/bond/claim`**, **`ccap/bond/release`**, **`ccap/bond/status`** — liability bond methods. Bonds are voluntary costly signals; posting one is only rational if the agent's private estimate of failure probability is low.
+- **`ccap/credit/score`** — credit score query returning a 0–1000 score with component breakdown (payment reliability 30%, bond history 25%, transaction volume 20%, dispute rate 15%, counterparty diversity 10%).
+- **`schemas/escrow.schema.json`** — JSON Schema for escrow creation request.
+- **`schemas/bond.schema.json`** — JSON Schema for liability bond posting request.
+- **`schemas/credit-score.schema.json`** — JSON Schema for credit score query response.
+- **`examples/escrow-with-bond.json`** — end-to-end example of a trust-stack interaction: credit score check, bond verification, escrow creation, funding, verification, and release.
+- Error codes `-32020` through `-32027` covering escrow and bond error conditions.
+- Separating equilibrium analysis explaining the game-theoretic basis for bond posting.
+- Anti-gaming provisions for credit scores: score decay, self-dealing detection (0.1× weighting for related agents), Sybil resistance (new agents start at 0), and volume velocity limits.
 
 ---
 
