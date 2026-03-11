@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.1/contract-service",
+  "title": "ServiceAgreementCreateRequest",
+  "description": "Parameters for ccap/contract/service/create. Creates a formally verified service-level agreement between a capability provider and a consumer. Pricing, latency guarantees, and availability commitments are fixed for the contract term. SLA violations trigger automatic penalties.",
+  "type": "object",
+  "required": [
+    "idempotency_key",
+    "provider",
+    "consumer",
+    "capability",
+    "price_per_call",
+    "currency",
+    "max_latency_ms",
+    "min_availability_pct",
+    "escrow_required",
+    "bond_required",
+    "dispute_resolution",
+    "term_months",
+    "runtime"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "type": "string",
+      "description": "UUID v4 deduplication key.",
+      "format": "uuid",
+      "examples": ["contract-service-2026-03-11-001"]
+    },
+    "provider": {
+      "type": "string",
+      "description": "CCAP agent ID of the capability provider.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_review_v1_xyz789"]
+    },
+    "consumer": {
+      "type": "string",
+      "description": "CCAP agent ID of the capability consumer.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_legal_v1_abc123"]
+    },
+    "capability": {
+      "type": "string",
+      "description": "The capability name as registered in the CCAP capability registry. Must match a capability declared by the provider's registration.",
+      "minLength": 1,
+      "maxLength": 128,
+      "examples": ["contract_review", "risk_summary", "document_translation"]
+    },
+    "price_per_call": {
+      "type": "number",
+      "description": "Price per capability invocation in the specified currency. The Lean 4 invariant guarantees this price is fixed for the entire contract term; unilateral changes by the provider are rejected.",
+      "exclusiveMinimum": 0,
+      "examples": [0.50, 12.50, 100.00]
+    },
+    "currency": {
+      "type": "string",
+      "description": "Currency for per-call billing.",
+      "enum": ["USD", "USDC", "USDT"],
+      "examples": ["USD"]
+    },
+    "max_latency_ms": {
+      "type": "integer",
+      "description": "Maximum acceptable latency per invocation in milliseconds (p99). Exceedances within a measurement window trigger automatic SLA-violation penalties.",
+      "minimum": 100,
+      "maximum": 300000,
+      "examples": [5000, 30000, 300000]
+    },
+    "min_availability_pct": {
+      "type": "number",
+      "description": "Minimum uptime percentage over any 30-day rolling window, e.g. 99.9 for 99.9%. Falling below this threshold triggers automatic penalties.",
+      "minimum": 0,
+      "maximum": 100,
+      "examples": [99.9, 99.0, 95.0]
+    },
+    "escrow_required": {
+      "type": "boolean",
+      "description": "Whether the consumer must fund a pre-work escrow before the provider processes each invocation batch. Required for high-value or high-risk capabilities.",
+      "examples": [true, false]
+    },
+    "escrow_batch_size": {
+      "type": "integer",
+      "description": "Number of invocations covered by each escrow deposit. Required when escrow_required is true.",
+      "minimum": 1,
+      "examples": [10, 100]
+    },
+    "bond_required": {
+      "type": "boolean",
+      "description": "Whether the provider must maintain an active CCAP liability bond for the duration of the contract.",
+      "examples": [true, false]
+    },
+    "bond_minimum_amount": {
+      "type": "number",
+      "description": "Minimum bond amount the provider must maintain. Required when bond_required is true. The contract activation check verifies the provider has an active bond meeting or exceeding this amount.",
+      "exclusiveMinimum": 0,
+      "examples": [25000.00, 5000.00]
+    },
+    "dispute_resolution": {
+      "type": "string",
+      "description": "Method for resolving SLA disputes. 'arbitration_agent' uses a pre-designated arbitrator; 'multi_sig' uses a majority vote panel; 'automatic' uses machine-verifiable evidence only.",
+      "enum": ["arbitration_agent", "multi_sig", "automatic"],
+      "examples": ["arbitration_agent"]
+    },
+    "arbitration_agent_id": {
+      "type": "string",
+      "description": "CCAP agent ID of the designated arbitrator. Required when dispute_resolution is 'arbitration_agent'.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_arbiter_v1_arb001"]
+    },
+    "sla_penalty_schedule": {
+      "type": "object",
+      "description": "Penalty structure for SLA violations. If absent, default CCAP penalty schedule applies.",
+      "additionalProperties": false,
+      "properties": {
+        "latency_breach_pct_per_incident": {
+          "type": "number",
+          "description": "Percentage of the billing period fee refunded per latency SLA breach.",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [5.0]
+        },
+        "availability_breach_pct_per_day": {
+          "type": "number",
+          "description": "Percentage of the monthly fee refunded per day of availability breach.",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [10.0]
+        },
+        "max_credit_pct_per_month": {
+          "type": "number",
+          "description": "Maximum total credit the consumer can receive in any single month, as a percentage of that month's fees.",
+          "minimum": 0,
+          "maximum": 100,
+          "examples": [30.0]
+        }
+      }
+    },
+    "term_months": {
+      "type": "integer",
+      "description": "Contract duration in months.",
+      "minimum": 1,
+      "maximum": 60,
+      "examples": [3, 6, 12]
+    },
+    "runtime": {
+      "type": "string",
+      "description": "Execution runtime for penalty enforcement and payment settlement.",
+      "enum": ["offchain", "onchain"],
+      "examples": ["offchain"]
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key-value pairs for internal tracking.",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "dispute_resolution": { "const": "arbitration_agent" }
+    }
+  },
+  "then": {
+    "required": ["arbitration_agent_id"]
+  },
+  "examples": [
+    {
+      "idempotency_key": "550e8400-e29b-41d4-a716-446655440030",
+      "provider": "agent_review_v1_xyz789",
+      "consumer": "agent_legal_v1_abc123",
+      "capability": "contract_review",
+      "price_per_call": 12.50,
+      "currency": "USD",
+      "max_latency_ms": 30000,
+      "min_availability_pct": 99.0,
+      "escrow_required": true,
+      "escrow_batch_size": 10,
+      "bond_required": true,
+      "bond_minimum_amount": 25000.00,
+      "dispute_resolution": "arbitration_agent",
+      "arbitration_agent_id": "agent_arbiter_v1_arb001",
+      "sla_penalty_schedule": {
+        "latency_breach_pct_per_incident": 5.0,
+        "availability_breach_pct_per_day": 10.0,
+        "max_credit_pct_per_month": 30.0
+      },
+      "term_months": 6,
+      "runtime": "offchain",
+      "metadata": {
+        "engagement_type": "legal_review_pipeline",
+        "client_reference": "matter-2026-04"
+      }
+    }
+  ]
+}

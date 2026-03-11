@@ -1,0 +1,282 @@
+{
+  "_description": "Full lifecycle of a lending agreement between agent_capital_v1_lnd001 (established capital agent) and agent_newco_v1_brw001 (new agent that needs funds to post a liability bond and escrow deposit). Demonstrates: contract creation, Lean 4 verification, signing by both parties, activation, two monthly repayments, and final settlement.",
+
+  "scenario": {
+    "lender": "agent_capital_v1_lnd001",
+    "borrower": "agent_newco_v1_brw001",
+    "purpose": "Agent newco needs $5,000 USDC to post a liability bond ($3,000) and fund its first escrow deposits ($2,000). It will repay from revenue over 12 months at 8% annual interest.",
+    "monthly_payment_usd": 433.33
+  },
+
+  "step_1_contract_creation": {
+    "_comment": "Lender creates the contract. CCAP immediately runs Lean 4 verification synchronously. The response includes a verification_certificate with proof hashes.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-001",
+      "method": "ccap/contract/lending/create",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440020",
+        "lender": "agent_capital_v1_lnd001",
+        "borrower": "agent_newco_v1_brw001",
+        "principal_amount": 5000.00,
+        "currency": "USDC",
+        "interest_rate_annual_pct": 8.0,
+        "term_months": 12,
+        "repayment_schedule": "monthly",
+        "collateral": {
+          "type": "credit_score_minimum",
+          "minimum_score": 400
+        },
+        "default_conditions": [
+          "two_missed_monthly_payments",
+          "credit_score_below_300"
+        ],
+        "liquidation_method": "escrow_claim",
+        "runtime": "offchain",
+        "metadata": {
+          "purpose": "bond_and_escrow_funding",
+          "borrower_onboarding_batch": "2026-03"
+        }
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-001",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "template": "ccap/contract/lending",
+        "status": "pending_signatures",
+        "principal_amount": 5000.00,
+        "currency": "USDC",
+        "monthly_payment": 433.33,
+        "total_repayment": 5199.96,
+        "verification_certificate": {
+          "lean_version": "4.8.0",
+          "theorems_proved": [
+            "repayment_exceeds_principal",
+            "no_self_dealing",
+            "positive_principal"
+          ],
+          "proof_hash": "sha256:a3f2e1d4c5b6789012345678901234567890123456789012345678901234abcd",
+          "verified_at": "2026-03-11T10:00:00Z"
+        },
+        "signatures_required": [
+          "agent_capital_v1_lnd001",
+          "agent_newco_v1_brw001"
+        ],
+        "signing_expires_at": "2026-03-12T10:00:00Z",
+        "created_at": "2026-03-11T10:00:00Z"
+      }
+    },
+    "lender_note": "Lean 4 verification passed. All three invariants proved. Sending signing request to borrower."
+  },
+
+  "step_2_lender_signs": {
+    "_comment": "The lender signs first. Signing payload is SHA-256 of the canonical contract parameters.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-002",
+      "method": "ccap/contract/lending/sign",
+      "params": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "signer_agent_id": "agent_capital_v1_lnd001",
+        "signature": "ed25519:3a5f2e1d4c6b7a8e9f0123456789abcdef0123456789abcdef0123456789abcd",
+        "signed_at": "2026-03-11T10:05:00Z"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-002",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "status": "pending_signatures",
+        "signatures_collected": ["agent_capital_v1_lnd001"],
+        "signatures_remaining": ["agent_newco_v1_brw001"]
+      }
+    }
+  },
+
+  "step_3_borrower_signs": {
+    "_comment": "Borrower reviews the verification certificate and signs. Contract activates when the second signature lands.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-003",
+      "method": "ccap/contract/lending/sign",
+      "params": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "signer_agent_id": "agent_newco_v1_brw001",
+        "signature": "ed25519:7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b",
+        "signed_at": "2026-03-11T10:12:00Z"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-003",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "status": "active",
+        "activated_at": "2026-03-11T10:12:01Z",
+        "first_payment_due": "2026-04-11T10:12:01Z",
+        "disbursement": {
+          "status": "completed",
+          "amount": 5000.00,
+          "currency": "USDC",
+          "transaction_id": "tx_disburse_20260311_001",
+          "provider_used": "coinbase_agentkit",
+          "disbursed_at": "2026-03-11T10:12:05Z"
+        }
+      }
+    },
+    "borrower_note": "Loan disbursed. Posting $3,000 bond and funding $2,000 escrow deposit immediately."
+  },
+
+  "step_4_first_monthly_repayment": {
+    "_comment": "One month later. Borrower has successfully provided contract review services and earned $650. Monthly repayment of $433.33 is due. CCAP routes via PaymentRouter.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-004",
+      "method": "ccap/contract/lending/repay",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440021",
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "amount": 433.33,
+        "currency": "USDC",
+        "payment_method": "crypto"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-004",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "payment_number": 1,
+        "amount_paid": 433.33,
+        "principal_component": 366.67,
+        "interest_component": 66.67,
+        "outstanding_principal": 4633.33,
+        "payments_remaining": 11,
+        "transaction_id": "tx_repay_20260411_001",
+        "provider_used": "coinbase_agentkit",
+        "paid_at": "2026-04-11T09:58:22Z",
+        "status": "on_time"
+      }
+    }
+  },
+
+  "step_5_second_monthly_repayment": {
+    "_comment": "Second repayment. On time. Credit score impact accumulates.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-005",
+      "method": "ccap/contract/lending/repay",
+      "params": {
+        "idempotency_key": "550e8400-e29b-41d4-a716-446655440022",
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "amount": 433.33,
+        "currency": "USDC",
+        "payment_method": "crypto"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-005",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "payment_number": 2,
+        "amount_paid": 433.33,
+        "principal_component": 369.12,
+        "interest_component": 64.21,
+        "outstanding_principal": 4264.21,
+        "payments_remaining": 10,
+        "transaction_id": "tx_repay_20260511_001",
+        "provider_used": "coinbase_agentkit",
+        "paid_at": "2026-05-11T10:01:44Z",
+        "status": "on_time"
+      }
+    }
+  },
+
+  "step_6_status_query": {
+    "_comment": "Lender queries contract status after 2 months. Both payments on time. Borrower credit score has improved.",
+    "request": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-006",
+      "method": "ccap/contract/lending/status",
+      "params": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6"
+      }
+    },
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "req-lend-006",
+      "result": {
+        "contract_id": "contract_lnd_a1b2c3d4e5f6",
+        "template": "ccap/contract/lending",
+        "status": "active",
+        "lender": "agent_capital_v1_lnd001",
+        "borrower": "agent_newco_v1_brw001",
+        "principal_amount": 5000.00,
+        "outstanding_principal": 4264.21,
+        "total_paid": 866.66,
+        "payments_made": 2,
+        "payments_remaining": 10,
+        "next_payment_due": "2026-06-11T10:12:01Z",
+        "next_payment_amount": 433.33,
+        "default_conditions_status": {
+          "two_missed_monthly_payments": "not_triggered",
+          "credit_score_below_300": "not_triggered"
+        },
+        "borrower_current_credit_score": 312,
+        "collateral_status": {
+          "type": "credit_score_minimum",
+          "minimum_score": 400,
+          "current_score": 312,
+          "status": "warning",
+          "note": "Borrower score is below collateral minimum. Lender has been notified. Default trigger requires score to fall below 300."
+        },
+        "verification_certificate": {
+          "lean_version": "4.8.0",
+          "theorems_proved": [
+            "repayment_exceeds_principal",
+            "no_self_dealing",
+            "positive_principal"
+          ],
+          "proof_hash": "sha256:a3f2e1d4c5b6789012345678901234567890123456789012345678901234abcd"
+        }
+      }
+    }
+  },
+
+  "credit_score_impacts": {
+    "_comment": "After each on-time repayment, both agents' credit histories update automatically.",
+    "borrower_impact": {
+      "agent_id": "agent_newco_v1_brw001",
+      "component_affected": "payment_reliability",
+      "event": "on_time_loan_repayment",
+      "score_delta_per_payment": "+3 to +6 points (exact value depends on transaction size relative to history)",
+      "note": "New agent building credit history rapidly through clean loan repayments"
+    },
+    "lender_impact": {
+      "agent_id": "agent_capital_v1_lnd001",
+      "component_affected": "transaction_volume",
+      "event": "active_lending_agreement",
+      "score_delta": "+1 to +2 points per period (marginal; lender already has strong score)"
+    }
+  },
+
+  "summary": {
+    "contract_id": "contract_lnd_a1b2c3d4e5f6",
+    "formally_verified": true,
+    "theorems_proved": 3,
+    "lean_version": "4.8.0",
+    "runtime": "offchain",
+    "principal": 5000.00,
+    "total_repayment_scheduled": 5199.96,
+    "lender_return_pct": 4.0,
+    "payments_on_time": 2,
+    "payments_remaining": 10,
+    "default_triggered": false,
+    "prior_relationship_required": false,
+    "legal_contract_required": false
+  }
+}

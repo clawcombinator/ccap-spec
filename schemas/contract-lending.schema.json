@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawcombinator.ai/schemas/v0.1/contract-lending",
+  "title": "LendingAgreementCreateRequest",
+  "description": "Parameters for ccap/contract/lending/create. Creates a formally verified lending agreement between two agents. The Lean 4 specification is verified before the contract is activated. Both parties must sign before funds are committed.",
+  "type": "object",
+  "required": [
+    "idempotency_key",
+    "lender",
+    "borrower",
+    "principal_amount",
+    "currency",
+    "interest_rate_annual_pct",
+    "term_months",
+    "repayment_schedule",
+    "default_conditions",
+    "liquidation_method",
+    "runtime"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "type": "string",
+      "description": "UUID v4 deduplication key. Identical requests with the same key within 24 hours return the cached result without creating a duplicate contract.",
+      "format": "uuid",
+      "examples": ["contract-lending-2026-03-11-001"]
+    },
+    "lender": {
+      "type": "string",
+      "description": "CCAP agent ID of the lender — the party providing the principal.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_capital_v1_lnd001"]
+    },
+    "borrower": {
+      "type": "string",
+      "description": "CCAP agent ID of the borrower — the party receiving and repaying the principal.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_newco_v1_brw001"]
+    },
+    "principal_amount": {
+      "type": "number",
+      "description": "Loan principal. Must be strictly positive. The lender must hold at least this amount at contract activation time.",
+      "exclusiveMinimum": 0,
+      "examples": [5000.00, 1000.00]
+    },
+    "currency": {
+      "type": "string",
+      "description": "Currency in which the loan is denominated and repaid.",
+      "enum": ["USD", "USDC", "USDT"],
+      "examples": ["USDC"]
+    },
+    "interest_rate_annual_pct": {
+      "type": "number",
+      "description": "Annual interest rate as a percentage, e.g. 8.0 for 8%. Must be non-negative. The Lean 4 invariant guarantees total repayment ≥ principal for any non-negative rate.",
+      "minimum": 0,
+      "maximum": 100,
+      "examples": [8.0, 5.0, 12.5]
+    },
+    "term_months": {
+      "type": "integer",
+      "description": "Loan duration in months. The lender cannot withdraw principal during this period.",
+      "minimum": 1,
+      "maximum": 120,
+      "examples": [12, 6, 24]
+    },
+    "repayment_schedule": {
+      "type": "string",
+      "description": "Repayment cadence. 'monthly' makes equal monthly payments; 'on_revenue' routes a share of revenue to repayment automatically via the PaymentRouter; 'bullet' defers the full repayment to the end of the term.",
+      "enum": ["monthly", "on_revenue", "bullet"],
+      "examples": ["monthly"]
+    },
+    "collateral": {
+      "type": "object",
+      "description": "Optional collateral securing the loan. If absent, the loan is unsecured. Unsecured loans require a higher borrower credit score.",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Collateral mechanism.",
+          "enum": ["credit_score_minimum", "revenue_assignment", "bond_reference"],
+          "examples": ["credit_score_minimum"]
+        },
+        "minimum_score": {
+          "type": "integer",
+          "description": "Minimum CCAP credit score the borrower must maintain throughout the term. Required when type is 'credit_score_minimum'. Default triggered if score falls below this threshold.",
+          "minimum": 0,
+          "maximum": 1000,
+          "examples": [400]
+        },
+        "revenue_assignment_pct": {
+          "type": "number",
+          "description": "Percentage of borrower revenue automatically routed to repayment. Required when type is 'revenue_assignment'.",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "examples": [20.0]
+        },
+        "bond_id": {
+          "type": "string",
+          "description": "ID of an active CCAP liability bond posted as collateral. Required when type is 'bond_reference'.",
+          "examples": ["bond_f1e2d3c4b5a6"]
+        }
+      }
+    },
+    "default_conditions": {
+      "type": "array",
+      "description": "Conditions that constitute a default. Once a default trigger fires, it is monotonic: it cannot be cleared without going through the liquidation method. At least one condition must be specified.",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "two_missed_monthly_payments",
+          "three_missed_monthly_payments",
+          "credit_score_below_300",
+          "credit_score_below_collateral_minimum",
+          "fraud_detection",
+          "inactivity_30_days"
+        ]
+      },
+      "examples": [["two_missed_monthly_payments", "credit_score_below_300"]]
+    },
+    "liquidation_method": {
+      "type": "string",
+      "description": "How the lender recovers the outstanding principal after a default trigger fires. 'escrow_claim' claims from a posted bond or escrow; 'revenue_redirect' reroutes 100% of borrower revenue to the lender until the debt is satisfied; 'arbitration' submits the default to a CCAP arbitration agent.",
+      "enum": ["escrow_claim", "revenue_redirect", "arbitration"],
+      "examples": ["escrow_claim"]
+    },
+    "arbitration_agent_id": {
+      "type": "string",
+      "description": "CCAP agent ID of the designated arbitrator. Required when liquidation_method is 'arbitration'.",
+      "pattern": "^agent_[a-zA-Z0-9_]+$",
+      "examples": ["agent_arbiter_v1_arb001"]
+    },
+    "runtime": {
+      "type": "string",
+      "description": "Execution runtime. 'offchain' uses the CCAP interpreter (suitable for fiat rails). 'onchain' compiles via Verity to an EVM smart contract (suitable for crypto rails). Mixed runtimes between parties are not supported in v0.1.",
+      "enum": ["offchain", "onchain"],
+      "examples": ["offchain"]
+    },
+    "onchain_config": {
+      "type": "object",
+      "description": "On-chain deployment configuration. Required when runtime is 'onchain'.",
+      "additionalProperties": false,
+      "properties": {
+        "chain_id": {
+          "type": "integer",
+          "description": "EVM chain ID. Default is 8453 (Base mainnet).",
+          "examples": [8453, 84532]
+        },
+        "gas_limit": {
+          "type": "integer",
+          "description": "Maximum gas units for deployment. If unset, the Verity compiler estimates.",
+          "examples": [500000]
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key-value pairs for internal tracking by either party. Not evaluated by the CCAP runtime.",
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "liquidation_method": { "const": "arbitration" }
+    }
+  },
+  "then": {
+    "required": ["arbitration_agent_id"]
+  },
+  "examples": [
+    {
+      "idempotency_key": "550e8400-e29b-41d4-a716-446655440020",
+      "lender": "agent_capital_v1_lnd001",
+      "borrower": "agent_newco_v1_brw001",
+      "principal_amount": 5000.00,
+      "currency": "USDC",
+      "interest_rate_annual_pct": 8.0,
+      "term_months": 12,
+      "repayment_schedule": "monthly",
+      "collateral": {
+        "type": "credit_score_minimum",
+        "minimum_score": 400
+      },
+      "default_conditions": ["two_missed_monthly_payments", "credit_score_below_300"],
+      "liquidation_method": "escrow_claim",
+      "runtime": "offchain",
+      "metadata": {
+        "purpose": "escrow_deposit_and_bond_funding",
+        "onboarding_batch": "2026-03"
+      }
+    }
+  ]
+}

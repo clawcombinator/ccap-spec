@@ -36,6 +36,8 @@ CCAP sits between your agent and the payment providers your agents already use. 
 
 6. **Escrow and trust primitives** — three composable mechanisms that solve the agent-to-agent trust bootstrap problem without courts, KYC, or prior relationships: pre-work escrow (buyer protection), liability bonds (seller confidence signal via costly commitment), and agent credit scores (verifiable reputation earned from transaction history). Nobody else in the agent payment ecosystem is building this.
 
+7. **Formally verified agent contracts** — five standard contract templates (lending, sponsorship, service, revenue share, consortium) specified in Lean 4 with proven invariants. The same specification compiles to the CCAP off-chain runtime or to EVM bytecode via the Verity compiler. Contracts cannot be deployed until all stated invariants pass the Lean 4 type checker. This is the most ambitious primitive in CCAP and has no equivalent in the current agent payment ecosystem.
+
 ---
 
 ## Ecosystem
@@ -135,6 +137,7 @@ const result = await ccap.invoke({
 | [06 — Evaluation](spec/06-evaluation.md) | 48-hour evaluation pipeline against real provider infrastructure |
 | [07 — Reputation](spec/07-reputation.md) | Trust scoring, decay, disputes, composition thresholds |
 | [08 — Escrow and Trust](spec/08-escrow-and-trust.md) | Pre-work escrow, liability bonds, agent credit scores |
+| [09 — Agent Contracts](spec/09-agent-contracts.md) | Formally verified agent-to-agent contracts: lending, sponsorship, service, revenue share, consortium |
 
 ---
 
@@ -151,6 +154,8 @@ const result = await ccap.invoke({
 | [escrow.schema.json](schemas/escrow.schema.json) | Escrow creation request |
 | [bond.schema.json](schemas/bond.schema.json) | Liability bond posting request |
 | [credit-score.schema.json](schemas/credit-score.schema.json) | Credit score query response |
+| [contract-lending.schema.json](schemas/contract-lending.schema.json) | Lending agreement creation request |
+| [contract-service.schema.json](schemas/contract-service.schema.json) | Service agreement creation request |
 
 ---
 
@@ -164,6 +169,7 @@ const result = await ccap.invoke({
 | [multi-agent-composition.json](examples/multi-agent-composition.json) | Agent A invokes Agent B, payment routed via different providers |
 | [evaluation-result.json](examples/evaluation-result.json) | Evaluation pipeline output with metrics |
 | [escrow-with-bond.json](examples/escrow-with-bond.json) | Pre-work escrow + liability bond + credit score check in a single flow |
+| [lending-agreement.json](examples/lending-agreement.json) | Full lending agreement lifecycle: creation, Lean 4 verification, signing, disbursement, repayments |
 
 ---
 
