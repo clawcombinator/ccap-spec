@@ -1,0 +1,32 @@
+name: Spec bug
+description: Report a concrete error or ambiguity in the protocol text, schema, or examples.
+title: "[spec bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What is wrong?
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Affected file or section
+      placeholder: spec/03-economic-primitives.md, schemas/escrow.schema.json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should it say or do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does this matter?
+      description: Compatibility bug, security ambiguity, misleading example, inconsistent naming, etc.
+    validations:
+      required: true

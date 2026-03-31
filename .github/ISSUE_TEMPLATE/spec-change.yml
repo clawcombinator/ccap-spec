@@ -1,0 +1,41 @@
+name: Spec change proposal
+description: Propose a scoped protocol or schema improvement.
+title: "[spec change] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What real protocol, interoperability, or safety problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Likely files
+      placeholder: spec/05-safety.md, schemas/evaluation-result.schema.json, examples/*
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Explain whether this is additive, clarifying, or breaking.
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Suggested size
+      options:
+        - good first issue
+        - medium
+        - substantial
+    validations:
+      required: true
